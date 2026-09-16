@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+*.log
+*.tgz

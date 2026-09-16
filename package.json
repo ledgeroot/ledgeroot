@@ -1,0 +1,77 @@
+{
+  "name": "ledgeroot",
+  "version": "0.1.0",
+  "description": "MCP payment plugin and evidence engine for agent x402 payments. Every agent payment, on the record.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./store": {
+      "types": "./dist/store/db.d.ts",
+      "import": "./dist/store/db.js"
+    },
+    "./verify": {
+      "types": "./dist/verify/verifier.d.ts",
+      "import": "./dist/verify/verifier.js"
+    },
+    "./anchor": {
+      "types": "./dist/anchor/anchorer.d.ts",
+      "import": "./dist/anchor/anchorer.js"
+    },
+    "./receipt": {
+      "types": "./dist/receipt/builder.d.ts",
+      "import": "./dist/receipt/builder.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts"
+    }
+  },
+  "bin": {
+    "ledgeroot": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "contracts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsc -p tsconfig.json --watch",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "verify": "node dist/cli.js verify",
+    "deploy:monad": "tsx deploy/monad.ts"
+  },
+  "keywords": [
+    "mcp",
+    "x402",
+    "agent",
+    "payments",
+    "audit",
+    "monad"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "better-sqlite3": "^13.0.3",
+    "canonicalize": "^5.0.0",
+    "viem": "^2.56.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.3",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}
