@@ -50,7 +50,8 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "verify": "node dist/cli.js verify",
-    "deploy:monad": "tsx deploy/monad.ts"
+    "deploy:monad": "tsx deploy/monad.ts",
+    "demo:pay": "tsx scripts/pay-demo.ts"
   },
   "keywords": [
     "mcp",

@@ -57,10 +57,24 @@ LEDGEROOT_DB=./ledgeroot.sqlite node dist/server.js
 | 变量 | 说明 |
 |---|---|
 | `LEDGEROOT_DB` | SQLite 数据库路径（默认 `ledgeroot.sqlite`） |
-| `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator HTTP 地址 |
+| `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator HTTP 地址（默认 `https://x402-facilitator.molandak.org`） |
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC（默认 `https://testnet-rpc.monad.xyz`） |
 | `LEDGEROOT_ANCHOR_ADDRESS` | 锚定合约地址（未设置则锚定离线） |
-| `LEDGEROOT_PRIVATE_KEY` | 锚定签名私钥（永不出本机） |
+| `LEDGEROOT_PRIVATE_KEY` | 支付 + 锚定签名私钥（永不出本机） |
+
+## 真实支付演示（Monad testnet）
+
+前置：`ledgeroot/.env` 配好 `LEDGEROOT_PRIVATE_KEY`，钱包里已有测试网 USDC（Circle faucet）。
+
+```bash
+# 策略放行 → 真实 USDC 支付 → 出六段收据
+npm run demo:pay -- <payTo地址> 0.001
+
+# 查看收据链 + 离线验证
+npm run verify -- --db ./ledgeroot.sqlite
+```
+
+`demo:pay` 会：写入一条演示 mandate → 跑 `ledgeroot_pay` 全流程 → 过五条策略 → 本地签 EIP-3009 `transferWithAuthorization` → 经 facilitator `/verify` + `/settle` 上链结算（facilitator 代付 gas）→ 打印六段收据。
 
 ## 锚定合约
 

@@ -2,7 +2,11 @@ import type { Hex } from "viem";
 import { LedgerootStore } from "./store/db.js";
 import { PolicyEngine } from "./policy/engine.js";
 import { defaultPolicies } from "./policy/defaults.js";
-import { FacilitatorClient } from "./x402/facilitator.js";
+import {
+  FacilitatorClient,
+  MONAD_FACILITATOR_URL,
+  MONAD_TESTNET_X402,
+} from "./x402/facilitator.js";
 import { Anchorer } from "./anchor/anchorer.js";
 import { DEFAULT_RPC_URL, monadTestnet } from "./chains.js";
 import type { LedgerootServices } from "./context.js";
@@ -22,7 +26,11 @@ export function createServices(options: BootstrapOptions = {}): LedgerootService
     engine.register(policy);
   }
 
-  const payments = new FacilitatorClient(process.env.LEDGEROOT_FACILITATOR_URL);
+  const payments = new FacilitatorClient({
+    url: process.env.LEDGEROOT_FACILITATOR_URL ?? MONAD_FACILITATOR_URL,
+    network: MONAD_TESTNET_X402,
+    privateKey: process.env.LEDGEROOT_PRIVATE_KEY,
+  });
 
   const anchorAddress = process.env.LEDGEROOT_ANCHOR_ADDRESS;
   const anchorer = anchorAddress
