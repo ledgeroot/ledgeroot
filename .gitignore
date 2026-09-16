@@ -12,3 +12,6 @@ contracts/cache/
 contracts/broadcast/
 *.log
 *.tgz
+
+# Foundry build cache
+cache/
