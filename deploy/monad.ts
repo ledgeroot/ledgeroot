@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { pathToFileURL } from "node:url";
@@ -28,15 +29,27 @@ export async function deployAnchor(bytecode: Hex): Promise<Hex> {
   return wallet.deployContract({ abi: monad.anchorAbi, bytecode });
 }
 
+function readFoundryBytecode(): Hex | undefined {
+  try {
+    const artifact = JSON.parse(
+      readFileSync("contracts/out/LedgerootAnchor.sol/LedgerootAnchor.json", "utf8"),
+    ) as { bytecode?: { object?: string } };
+    return artifact.bytecode?.object ? (`0x${artifact.bytecode.object}` as Hex) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function main(): Promise<void> {
-  const bytecode = process.env.LEDGEROOT_ANCHOR_BYTECODE;
+  const bytecode = (process.env.LEDGEROOT_ANCHOR_BYTECODE ??
+    readFoundryBytecode()) as Hex | undefined;
   if (!bytecode) {
     console.log(
-      "Set LEDGEROOT_ANCHOR_BYTECODE (from `forge build`) and LEDGEROOT_DEPLOYER_PRIVATE_KEY to deploy.",
+      "Run `forge build` first (or set LEDGEROOT_ANCHOR_BYTECODE) and set LEDGEROOT_DEPLOYER_PRIVATE_KEY to deploy.",
     );
     return;
   }
-  const address = await deployAnchor(bytecode as Hex);
+  const address = await deployAnchor(bytecode);
   console.log(JSON.stringify({ network: monad.name, address }, null, 2));
 }
 

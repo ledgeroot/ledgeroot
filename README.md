@@ -76,16 +76,38 @@ npm run verify -- --db ./ledgeroot.sqlite
 
 `demo:pay` 会：写入一条演示 mandate → 跑 `ledgeroot_pay` 全流程 → 过五条策略 → 本地签 EIP-3009 `transferWithAuthorization` → 经 facilitator `/verify` + `/settle` 上链结算（facilitator 代付 gas）→ 打印六段收据。
 
-## 锚定合约
+## 锚定合约 + 上链
 
-`contracts/src/LedgerootAnchor.sol` — 全项目唯一合约，只存 32 字节根 + 回指针。
+`contracts/src/LedgerootAnchor.sol` — 全项目唯一合约，只存 32 字节根 + 回指针。部署到 Monad testnet（chainId 10143）。
 
 ```bash
+# 0. 安装 Foundry（如未安装）
+#    curl -L https://foundry.paradigm.xyz | bash && foundryup
+
+# 1. 编译 + 测试合约
+forge install foundry-rs/forge-std
 forge build
-LEDGEROOT_ANCHOR_BYTECODE=$(cat contracts/out/LedgerootAnchor.sol/LedgerootAnchor.json | jq -r .bytecode.object) \
-LEDGEROOT_DEPLOYER_PRIVATE_KEY=... \
-npm run deploy:monad
+forge test
+
+# 2. 部署（二选一）
+#   a) Foundry 原生
+forge create contracts/src/LedgerootAnchor.sol:LedgerootAnchor \
+  --rpc-url https://testnet-rpc.monad.xyz \
+  --private-key $LEDGEROOT_DEPLOYER_PRIVATE_KEY
+#   b) 或 viem 脚本（自动读取 forge build 产物）
+LEDGEROOT_DEPLOYER_PRIVATE_KEY=... npm run deploy:monad
+
+# 3. 把部署地址写进 .env
+#    LEDGEROOT_ANCHOR_ADDRESS=0x...
+
+# 4. 上链锚定当前所有收据的 epoch Merkle 根
+npm run build && npm run anchor -- --db ./ledgeroot.sqlite
+
+# 5. 离线验证收据链 + 锚定
+npm run verify -- --db ./ledgeroot.sqlite
 ```
+
+`anchor` 把当前收据的 Merkle 根提交到链上并记录交易哈希；`verify` 离线重放校验收据链与锚定根。
 
 ## 仓库结构
 

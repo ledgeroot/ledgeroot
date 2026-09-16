@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServices } from "./bootstrap.js";
-import { exportEvidence, verify } from "./tools/receipts.js";
+import { anchor, exportEvidence, verify } from "./tools/receipts.js";
 
 const [, , command, ...args] = process.argv;
 
@@ -14,6 +14,7 @@ const USAGE = `ledgeroot — evidence engine for agent x402 payments
 Usage:
   ledgeroot verify [--db <path>]   Offline verification of the receipt chain + anchor
   ledgeroot export [--db <path>]   Export the evidence bundle as JSON
+  ledgeroot anchor [--db <path>]   Submit the epoch Merkle root on-chain
 `;
 
 async function main(): Promise<void> {
@@ -25,6 +26,9 @@ async function main(): Promise<void> {
         break;
       case "export":
         console.log(JSON.stringify(exportEvidence(services), null, 2));
+        break;
+      case "anchor":
+        console.log(JSON.stringify(await anchor(services), null, 2));
         break;
       default:
         console.log(USAGE);

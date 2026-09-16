@@ -54,11 +54,14 @@ export class Anchorer {
       chain: this.config.chain,
       transport: http(this.config.rpcUrl),
     });
+    // `root` is produced by node:crypto as unprefixed hex ("888d..."); viem
+    // requires a 0x-prefixed hex string to encode it as bytes32.
+    const rootHex = (root.startsWith("0x") ? root : `0x${root}`) as Hex;
     return wallet.writeContract({
       address: this.config.contractAddress,
       abi: anchorAbi,
       functionName: "anchor",
-      args: [root as Hex],
+      args: [rootHex],
     });
   }
 }

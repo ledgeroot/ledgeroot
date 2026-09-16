@@ -50,6 +50,7 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "verify": "node dist/cli.js verify",
+    "anchor": "node dist/cli.js anchor",
     "deploy:monad": "tsx deploy/monad.ts",
     "demo:pay": "tsx scripts/pay-demo.ts"
   },
