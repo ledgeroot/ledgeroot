@@ -61,6 +61,8 @@ export interface FacilitatorConfig {
   network: FacilitatorNetworkConfig;
   /** Payer private key (LEDGEROOT_PRIVATE_KEY). Never leaves this machine. */
   privateKey?: string;
+  /** HTTP timeout per facilitator request, in ms. Defaults to 30000. */
+  timeoutMs?: number;
 }
 
 const transferWithAuthorizationTypes = {
@@ -167,24 +169,37 @@ export class FacilitatorClient implements PaymentProvider {
   }
 
   private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
-    const res = await fetch(`${this.config.url}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const text = await res.text();
-    let data: unknown;
+    const timeoutMs = this.config.timeoutMs ?? 30_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      throw new Error(
-        `facilitator ${path} returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`,
-      );
+      const res = await fetch(`${this.config.url}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      let data: unknown;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(
+          `facilitator ${path} returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`,
+        );
+      }
+      if (!res.ok) {
+        throw new Error(`facilitator ${path} HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      return (data ?? {}) as Record<string, unknown>;
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(`facilitator ${path} timed out after ${timeoutMs}ms`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    if (!res.ok) {
-      throw new Error(`facilitator ${path} HTTP ${res.status}: ${text.slice(0, 200)}`);
-    }
-    return (data ?? {}) as Record<string, unknown>;
   }
 }
 
