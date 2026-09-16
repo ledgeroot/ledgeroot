@@ -48,10 +48,20 @@ describe("FacilitatorClient", () => {
 
     const settleBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(settleBody.x402Version).toBe(2);
-    expect(settleBody.accepted.network).toBe("eip155:10143");
-    expect(settleBody.accepted.amount).toBe("1000"); // 0.001 USDC in 6-dec units
-    expect(settleBody.accepted.asset).toBe(MONAD_TESTNET_X402.usdcAddress);
-    expect(settleBody.accepted.payTo).toBe(PAY_TO);
+
+    const { paymentPayload, paymentRequirements } = settleBody;
+    expect(paymentPayload.x402Version).toBe(2);
+    expect(paymentPayload.accepted.scheme).toBe("exact");
+    expect(paymentPayload.accepted.network).toBe("eip155:10143");
+    expect(paymentPayload.accepted.amount).toBe("1000"); // 0.001 USDC in 6-dec units
+    expect(paymentPayload.accepted.asset).toBe(MONAD_TESTNET_X402.usdcAddress);
+    expect(paymentPayload.accepted.payTo).toBe(PAY_TO);
+    expect(paymentPayload.payload.authorization.from).toBeTruthy();
+    expect(paymentPayload.payload.signature).toMatch(/^0x/);
+
+    expect(paymentRequirements.scheme).toBe("exact");
+    expect(paymentRequirements.network).toBe("eip155:10143");
+    expect(paymentRequirements.amount).toBe("1000");
   });
 
   it("throws when /verify rejects", async () => {

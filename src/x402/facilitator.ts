@@ -39,6 +39,8 @@ export interface FacilitatorNetworkConfig {
   chainId: number;
   /** x402 network identifier, e.g. "eip155:10143". */
   network: `eip155:${number}`;
+  /** x402 scheme id advertised by the facilitator, e.g. "exact". */
+  scheme: string;
   usdcAddress: `0x${string}`;
   usdcDomainName: string;
   usdcDomainVersion: string;
@@ -48,6 +50,7 @@ export interface FacilitatorNetworkConfig {
 export const MONAD_TESTNET_X402: FacilitatorNetworkConfig = {
   chainId: 10143,
   network: "eip155:10143",
+  scheme: "exact",
   usdcAddress: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
   usdcDomainName: "USDC",
   usdcDomainVersion: "2",
@@ -95,21 +98,27 @@ export class FacilitatorClient implements PaymentProvider {
     const account = privateKeyToAccount(this.config.privateKey as Hex);
     const { authorization, signature } = await this.authorize(account, quote);
 
+    const requirements = {
+      scheme: this.config.network.scheme,
+      network: this.config.network.network,
+      amount: authorization.value,
+      asset: this.config.network.usdcAddress,
+      payTo: authorization.to,
+      maxTimeoutSeconds: 300,
+      extra: {
+        name: this.config.network.usdcDomainName,
+        version: this.config.network.usdcDomainVersion,
+      },
+    };
+
     const request = {
       x402Version: 2,
-      payload: { authorization, signature },
-      accepted: {
-        scheme: "exact",
-        network: this.config.network.network,
-        amount: authorization.value,
-        asset: this.config.network.usdcAddress,
-        payTo: authorization.to,
-        maxTimeoutSeconds: 300,
-        extra: {
-          name: this.config.network.usdcDomainName,
-          version: this.config.network.usdcDomainVersion,
-        },
+      paymentPayload: {
+        x402Version: 2,
+        accepted: requirements,
+        payload: { signature, authorization },
       },
+      paymentRequirements: requirements,
     };
 
     const verified = await this.post("/verify", request);
