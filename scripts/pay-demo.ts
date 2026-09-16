@@ -1,4 +1,5 @@
 import { createServices } from "../src/bootstrap.js";
+import { signMandate } from "../src/mandate.js";
 import { handlePay } from "../src/tools/pay.js";
 import type { Mandate } from "../src/types.js";
 
@@ -11,19 +12,25 @@ if (!payTo) {
   process.exit(1);
 }
 
-const mandate: Mandate = {
-  id: "demo-mandate-pay",
-  summary: `Allow a single payment of up to 1 USDC to ${payTo}`,
-  issuer: "0x0000000000000000000000000000000000000000",
-  counterpartyAllowlist: ["xapi.to"],
-  payTo: [payTo],
-  maxAmountPerPayment: "1",
-  maxTotalAmount: "20",
-  expiresAt: Math.floor(Date.now() / 1000) + 3600,
-};
-
 const services = createServices();
 try {
+  const privateKey = process.env.LEDGEROOT_PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error("LEDGEROOT_PRIVATE_KEY is not set");
+  }
+
+  const unsigned: Mandate = {
+    id: "demo-mandate-pay",
+    summary: `Allow a single payment of up to 1 USDC to ${payTo}`,
+    issuer: "",
+    counterpartyAllowlist: ["xapi.to"],
+    payTo: [payTo],
+    maxAmountPerPayment: "1",
+    maxTotalAmount: "20",
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  };
+
+  const mandate = await signMandate(unsigned, privateKey);
   services.store.upsertMandate(mandate);
 
   const result = await handlePay(services, {
@@ -37,6 +44,8 @@ try {
     endpoint: "/search",
   });
 
+  console.log("MANDATE:");
+  console.log(JSON.stringify({ id: mandate.id, issuer: mandate.issuer }, null, 2));
   console.log("RESULT:");
   console.log(JSON.stringify(result, null, 2));
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import { mandateSchema } from "../policy/schema.js";
+import { verifyMandateSignature } from "../mandate.js";
 import type { Mandate } from "../types.js";
 
 export const mandateImportInput = {
@@ -16,13 +17,17 @@ export const mandateRevokeInputSchema = z.object(mandateRevokeInput);
 export type MandateImportInput = z.infer<typeof mandateImportInputSchema>;
 export type MandateRevokeInput = z.infer<typeof mandateRevokeInputSchema>;
 
-export function importMandate(
+export async function importMandate(
   services: LedgerootServices,
   input: MandateImportInput,
-): { imported: true; mandateId: string } {
+): Promise<{ imported: true; mandateId: string; issuer: string }> {
   const mandate = input.mandate as Mandate;
+  const verification = await verifyMandateSignature(mandate);
+  if (!verification.valid) {
+    throw new Error(`mandate "${mandate.id}" has an invalid or missing signature`);
+  }
   services.store.upsertMandate(mandate);
-  return { imported: true, mandateId: mandate.id };
+  return { imported: true, mandateId: mandate.id, issuer: verification.issuer };
 }
 
 export function listMandates(services: LedgerootServices): { mandates: Mandate[] } {

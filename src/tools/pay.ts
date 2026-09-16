@@ -4,6 +4,7 @@ import { buildReceipt } from "../receipt/builder.js";
 import { add } from "../decimal.js";
 import type { ReceiptSegments } from "../types.js";
 import type { X402Quote } from "../x402/facilitator.js";
+import { computePolicyIntersection } from "../mandate.js";
 
 export const payInput = {
   intent: z.string().describe("Natural-language intent of the payment"),
@@ -41,11 +42,12 @@ function buildSegments(
   input: PayInput,
   policyResults: ReceiptSegments["call"]["policyResults"],
   issuer: string,
+  policyIntersection: string[],
 ): ReceiptSegments {
   const now = Date.now();
   return {
     intent: { text: input.intent, timestamp: now },
-    mandate: { mandateId: input.mandateId, issuer, policyIntersection: [] },
+    mandate: { mandateId: input.mandateId, issuer, policyIntersection },
     plan: {
       quoteHash: input.quoteHash,
       quote: { amount: input.quoteAmount, payTo: input.payTo, endpoint: input.endpoint },
@@ -77,12 +79,17 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, [], ""),
+      segments: buildSegments(input, [], "", []),
       prevHash,
     });
     services.store.appendReceipt(receipt);
     return { status: "denied", receiptId: receipt.id, reason };
   }
+
+  const policyIntersection = computePolicyIntersection(
+    mandate,
+    services.engine.policies.map((policy) => policy.id),
+  );
 
   if (mandate.expiresAt <= Math.floor(Date.now() / 1000)) {
     const reason = `mandate "${mandate.id}" expired at ${mandate.expiresAt}`;
@@ -94,7 +101,7 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, [], mandate.issuer),
+      segments: buildSegments(input, [], mandate.issuer, policyIntersection),
       prevHash,
     });
     services.store.appendReceipt(receipt);
@@ -128,7 +135,7 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, policyResults, mandate.issuer),
+      segments: buildSegments(input, policyResults, mandate.issuer, policyIntersection),
       prevHash,
     });
     services.store.appendReceipt(receipt);
@@ -144,7 +151,7 @@ export async function handlePay(
   };
   const payment = await services.payments.pay(quote);
 
-  const segments = buildSegments(input, policyResults, mandate.issuer);
+  const segments = buildSegments(input, policyResults, mandate.issuer, policyIntersection);
   segments.tx = { txHash: payment.txHash, chainId: payment.chainId };
   segments.delivery = { payloadHash: payment.txHash };
 

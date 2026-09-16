@@ -46,7 +46,7 @@ export function createToolRouter(server: McpServer, services: LedgerootServices)
       description: "Import a signed AP2-style mandate and intersect it with local policy.",
       inputSchema: mandateImportInput,
     },
-    (args) => text(importMandate(services, args)),
+    async (args) => text(await importMandate(services, args)),
   );
 
   server.registerTool(
