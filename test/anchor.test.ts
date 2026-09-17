@@ -43,10 +43,9 @@ describe("anchor flow", () => {
       segments: segments(),
       prevHash: a.receiptHash,
     });
-    // Pin distinct timestamps so the store's ordering is deterministic — the
-    // epoch root is order-sensitive and buildReceipt uses Date.now().
-    a.timestamp = 1000;
-    b.timestamp = 2000;
+    // No timestamp pinning: the store orders receipts by append sequence, so
+    // the epoch root is reproducible even when both land in the same
+    // millisecond (buildReceipt uses Date.now()).
     store.appendReceipt(a);
     store.appendReceipt(b);
 

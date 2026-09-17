@@ -54,6 +54,7 @@
 | D5 | **第六段交付凭据是假的**：`segments.delivery = { payloadHash: payment.txHash }` | `src/tools/pay.ts` | 把 txHash 抄进交付证明字段；品牌核心能力目前是占位符 |
 | D6 | **锚定合约无权限控制**：`anchor(bytes32)` 任何人可调 | `contracts/src/LedgerootAnchor.sol` | "上链了"只证明"有人锚了这个根"；x402 草案攻击 A4 已把同类问题标为可伪造 |
 | D7 | **无链上结算内容校验**：只信任 facilitator 返回的 `txHash` | `src/verify/verifier.ts` | **出错或被攻破的 facilitator 返回伪造 txHash，验证照样报 `verified`** |
+| **D8** | **收据排序不确定**：`listReceipts` 按 `created_at ASC, id ASC` 排序，同毫秒时次级排序回退到**内容哈希** `id`，与追加顺序无关 | `src/store/db.ts` | ⚠️ **旗舰的离线验证会间歇性误报 `tampered`**（实测 12 次里 7 次）；且 epoch 根依赖该顺序 → **锚定不可复现** |
 
 ### 2.3 未开始
 
@@ -113,9 +114,14 @@
 
 ## 四、P0：正确性修复
 
-> **原则**：在 D1–D7 修完之前，**不要做任何分发动作**。带着可被证伪的密码学去争取可见性，是把缺陷放大给全世界看。
+> **原则**：在 D1–D8 修完之前，**不要做任何分发动作**。带着可被证伪的密码学去争取可见性，是把缺陷放大给全世界看。
 
 ### P0-1. Merkle 改为 RFC 6962 构造 ⭐ 最高优先
+
+> ✅ **已完成（2026-09-17）**，采用破坏性升级（Q1 已答）。
+> 实现：`src/anchor/merkle.ts` 重写为 RFC 6962 MTH —— 叶子 `SHA-256(0x00 ‖ d)`、内部节点 `SHA-256(0x01 ‖ L ‖ R)`、按最大 2 的幂切分（不再复制奇数末节点）。
+> 验证：`test/merkle.test.ts` 用 **RFC 9162 §2.1.2 的栈式算法**作独立预言机交叉验证（0–33 个叶子的每种规模），并直接断言旧构造的结构性歧义已消除（`[a,b,c]` 不再与 `[a,b,c,c]` 同根）。39 个测试全过，typecheck / build 通过。
+> ⚠️ **注意**：该改动的意义依赖 D8 修复 —— 叶子顺序不确定时，epoch 根不可复现。
 
 - **为什么**：这是唯一一个**对手已做对、我们做错**的密码学细节。改动最小、收益最明确。
 - **做什么**：
@@ -127,7 +133,7 @@
 - **验收**：
   - 现有测试全绿
   - 新增针对"叶/节点构造不可互换"的测试用例
-  - 与 RFC 6962 官方测试向量（Certificate Transparency 的已知根）比对通过
+  - 与 RFC 6962 官方测试向量比对通过
 - **注意**：这是**破坏性变更** —— 旧收据的根会变。因为这会影响历史锚定，需要一次明确的版本决策（见 §十 待定项）。
 
 ### P0-2. 收据补签名
@@ -189,6 +195,38 @@
 - **涉及**：`src/verify/verifier.ts`、新增 `src/verify/onchain.ts`、`src/chains.ts`、`test/`
 - **验收**：伪造的 txHash → 校验失败；真实交易 → 通过
 - **依赖**：需要 `src/chains.ts` 提供 RPC 客户端（已有 `chains.ts`，需确认是否够用）
+
+### P0-8. 收据排序改为单调追加序号 ⭐ 新发现，高优先
+
+> 该缺陷在验证 P0-1 时发现 —— 与 Merkle 改动无关，但会使其失去意义。
+>
+> ✅ **已完成（2026-09-17）**，采用方案 A（新增 `seq` 列 + 迁移）。
+> 实现：`receipts` 表新增 `seq INTEGER NOT NULL`；插入时取 `MAX(seq) + 1`（单条 INSERT 内的子查询，写事务内原子）；三处排序（`listReceipts` / `lastReceipt` / `getReceiptByRequestId`）全部改用 `seq`。
+> 迁移：`migrate()` 检查 `PRAGMA table_info`，旧库走 `ALTER TABLE ADD COLUMN seq INTEGER NOT NULL DEFAULT 0` 后按 `rowid`（写入顺序）回填。
+> 验证：新增 `test/store.test.ts`（4 个用例：乱序 id 的追加顺序、同毫秒链校验、幂等键取最早、旧库迁移回填）；移除 `anchor.test.ts` 里时间戳钉死的 workaround，该测试本身成为回归验证。
+> **实测：demo 连跑 15 次，`verify` 15/15 返回 `verified`（修复前 12 次里 7 次误报 `tampered`）。** 43 个测试全过，typecheck / build 通过。
+
+- **为什么**：D8。**旗舰的离线验证在干净链上会间歇性误报 `tampered`（实测 12 次里 7 次）**；且 epoch 根依赖该顺序，**锚定不可复现**。
+- **根因**：`listReceipts` 用 `ORDER BY created_at ASC, id ASC`。收据的 `created_at` 来自 `Date.now()`（毫秒）。同一毫秒内的两张收据，次级排序回退到**内容哈希** `id`——它与追加顺序毫无关系，于是返回顺序与哈希链的链接顺序不一致。
+- **实测证据**（demo 一次失败运行，实际追加顺序 A → B → C）：
+
+  | store 位置 | created_at | status | id | prev_hash |
+  |---|---|---|---|---|
+  | 0 | …061 | paid | `e587dff8…` | `null` |
+  | 1 | …062 | denied | `66ccda08…` | `d03fbb51…` |
+  | 2 | …062 | denied | `d03fbb51…` | `e587dff8…` |
+
+  B 与 C 同毫秒，`id ASC` 把 `66cc…`（C）排到了 `d03f…`（B）之前 → `prevHash` 对不上 → 报 `tampered`。
+
+- **做什么**：为 `receipts` 表引入**单调追加序号**，排序一律以它为准
+  - 方案 A（推荐）：新增 `seq INTEGER`（或 `INTEGER PRIMARY KEY AUTOINCREMENT`）列 + 迁移
+  - 方案 B（最小改动）：直接 `ORDER BY rowid`（依赖 SQLite 隐式 rowid，但 `VACUUM` 可能重编号，证据账本不宜依赖）
+  - **不要**再用任何内容派生或毫秒级字段做排序键
+- **涉及**：`src/store/db.ts`（建表 + 迁移 + `listReceipts` / `lastReceipt`）、`test/anchor.test.ts`（可移除时间戳钉死的 workaround）、新增排序回归测试
+- **验收**：
+  - 连续跑 demo 多次，`verify` **恒定**返回 `verified`
+  - 新增测试：同一毫秒追加多张收据，`listReceipts` 顺序与追加顺序一致
+  - `test/anchor.test.ts` 里"Pin distinct timestamps"那段 workaround 可以删掉
 
 ---
 
@@ -325,13 +363,14 @@
 
 ## 十、待定决策
 
-| # | 决策 | 影响 | 需要的信息 |
+| # | 决策 | 影响 | 状态 |
 |---|---|---|---|
-| **Q1** | **P0-1 的 Merkle 变更是破坏性的 —— 是否保留向后兼容？** | 决定是否需要收据 schema 版本升级（`ledgeroot.receipt.v2`）与迁移路径 | 当前是否有真实用户的历史锚定需要保留 |
-| **Q2** | 签名密钥与锚定密钥是否分离？ | 安全边界设计 | — |
-| **Q3** | 独立验证器包放本仓库 monorepo 还是独立仓库？ | 分发与版本节奏 | — |
-| **Q4** | facilitator 多路化的目标链优先级？（Base / Solana / BNB） | 工作量与生态契合度 | 目标用户在哪条链上 |
-| **Q5** | 支柱 1 的对外表述最终定稿？ | 全部文案 | 见 §三 修订版 |
+| **Q1** | **P0-1 的 Merkle 变更是破坏性的 —— 是否保留向后兼容？** | 决定是否需要收据 schema 版本升级与迁移路径 | ✅ **已答（2026-09-17）：采用破坏性升级。** 实现见 P0-1。**遗留：版本号决策未定 —— 破坏性变更按 semver 应升到 `0.2.0`（当前 `0.1.2`），且 MandateKey 依赖 `ledgeroot@^0.1.2`，需同步** |
+| **Q2** | 签名密钥与锚定密钥是否分离？ | 安全边界设计 | 待定 |
+| **Q3** | 独立验证器包放本仓库 monorepo 还是独立仓库？ | 分发与版本节奏 | 待定 |
+| **Q4** | facilitator 多路化的目标链优先级？（Base / Solana / BNB） | 工作量与生态契合度 | 待定 |
+| **Q5** | 支柱 1 的对外表述最终定稿？ | 全部文案 | 待定 |
+| **Q6** | **P0-8 的排序修复用哪个方案？**（新增 `seq` 列 vs 依赖 `rowid`） | 是否做 schema 迁移 | 待定，推荐方案 A |
 
 ---
 

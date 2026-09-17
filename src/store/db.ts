@@ -25,6 +25,7 @@ export class LedgerootStore {
     this.db.pragma("journal_mode = WAL");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS receipts (
+        seq INTEGER NOT NULL,
         id TEXT PRIMARY KEY,
         prev_hash TEXT,
         status TEXT NOT NULL,
@@ -52,15 +53,44 @@ export class LedgerootStore {
         anchored_at INTEGER NOT NULL
       );
     `);
+    this.migrate();
+  }
+
+  /**
+   * Bring a database written by an earlier version up to date.
+   *
+   * Receipts used to be ordered by `created_at` with `id` as the tie-break.
+   * `id` is a content hash, so two receipts written in the same millisecond
+   * could come back in an order that did not match the hash chain — which made
+   * chain verification report `tampered` on an untouched ledger, and made the
+   * epoch Merkle root depend on which order the store happened to return.
+   * `seq` is the append order and is now the only ordering key.
+   */
+  private migrate(): void {
+    const columns = this.db.prepare("PRAGMA table_info(receipts)").all() as Array<{
+      name: string;
+    }>;
+    if (columns.some((column) => column.name === "seq")) return;
+
+    this.db.exec("ALTER TABLE receipts ADD COLUMN seq INTEGER NOT NULL DEFAULT 0");
+    // rowid is the only append-order signal available for rows written before
+    // `seq` existed.
+    const rows = this.db.prepare("SELECT rowid AS rid FROM receipts ORDER BY rowid").all() as Array<{
+      rid: number;
+    }>;
+    const setSeq = this.db.prepare("UPDATE receipts SET seq = ? WHERE rowid = ?");
+    this.db.transaction(() => {
+      rows.forEach((row, index) => setSeq.run(index + 1, row.rid));
+    })();
   }
 
   appendReceipt(receipt: Receipt): void {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO receipts
-           (id, prev_hash, status, agent_id, mandate_id, request_id, task_id, counterparty, endpoint, amount, reason, receipt_json, created_at)
+           (seq, id, prev_hash, status, agent_id, mandate_id, request_id, task_id, counterparty, endpoint, amount, reason, receipt_json, created_at)
          VALUES
-           (@id, @prev_hash, @status, @agent_id, @mandate_id, @request_id, @task_id, @counterparty, @endpoint, @amount, @reason, @receipt_json, @created_at)`,
+           ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, @prev_hash, @status, @agent_id, @mandate_id, @request_id, @task_id, @counterparty, @endpoint, @amount, @reason, @receipt_json, @created_at)`,
       )
       .run({
         id: receipt.id,
@@ -81,7 +111,7 @@ export class LedgerootStore {
 
   lastReceipt(): Receipt | null {
     const row = this.db
-      .prepare("SELECT receipt_json FROM receipts ORDER BY created_at DESC, id DESC LIMIT 1")
+      .prepare("SELECT receipt_json FROM receipts ORDER BY seq DESC LIMIT 1")
       .get() as { receipt_json: string } | undefined;
     return row ? (JSON.parse(row.receipt_json) as Receipt) : null;
   }
@@ -97,7 +127,7 @@ export class LedgerootStore {
   getReceiptByRequestId(requestId: string): Receipt | null {
     const row = this.db
       .prepare(
-        "SELECT receipt_json FROM receipts WHERE request_id = ? ORDER BY created_at ASC, id ASC LIMIT 1",
+        "SELECT receipt_json FROM receipts WHERE request_id = ? ORDER BY seq ASC LIMIT 1",
       )
       .get(requestId) as { receipt_json: string } | undefined;
     return row ? (JSON.parse(row.receipt_json) as Receipt) : null;
@@ -124,7 +154,7 @@ export class LedgerootStore {
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
     const rows = this.db
-      .prepare(`SELECT receipt_json FROM receipts ${where} ORDER BY created_at ASC, id ASC`)
+      .prepare(`SELECT receipt_json FROM receipts ${where} ORDER BY seq ASC`)
       .all(params) as Array<{ receipt_json: string }>;
     return rows.map((r) => JSON.parse(r.receipt_json) as Receipt);
   }
