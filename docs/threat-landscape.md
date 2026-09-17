@@ -613,7 +613,9 @@ Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页）§6
 
 **Vaara 在这条支柱上比 Ledgeroot 更彻底**：Ledgeroot 是"本地 SQLite + CLI"，Vaara 是"断网单文件可验 + 明确宣称验证不是一项服务"。**支柱 3 不再是差异，只是平价——而且我们这一侧还差一截。**
 
-> 📌 **准确表述**：Ledgeroot 剩下的不是三根支柱，而是**"支付专用的用户签名授权 + 零出境"这一格**。见 [vaara-competitive-analysis.md](./vaara-competitive-analysis.md) §六。
+> 📌 **准确表述（第六次修订）**：Ledgeroot 剩下的不是三根支柱，而是**"链上稳定币 × agent 小额 402 支付"这个生态位里的用户签名授权 + 零出境**。生态位定义见 [commercialization.md](./commercialization.md) §零，剩余空间分析见 [standards-landscape.md](./standards-landscape.md) §六。
+>
+> ⚠️ **关键区别**：Vaara 与 OAP 占据的是**能力**，Ledgeroot 剩下的是**生态位**。能力可以被对手用半年抹平；**生态位要对手放弃自己的商业模型才能进来**（Vaara 卖高风险系统合规，OAP 按席位托管收费，两者都装不下 $0.005 的粒度）。**这是两种不同性质的防守。**
 
 ---
 

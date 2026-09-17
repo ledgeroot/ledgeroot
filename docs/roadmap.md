@@ -1,7 +1,7 @@
 # Ledgeroot 行动规划
 
 > 制定日期：2026-09-17
-> 依据文档：[threat-landscape.md](./threat-landscape.md) · [standards-landscape.md](./standards-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [commercialization.md](./commercialization.md)
+> 依据文档：[commercialization.md](./commercialization.md) · [architecture-gaps.md](./architecture-gaps.md) · [standards-landscape.md](./standards-landscape.md) · [threat-landscape.md](./threat-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)
 > 适用范围：Ledgeroot（engine）+ MandateKey（dashboard）
 > 排序原则：**先正确性，再差异化，再可见性，最后公信力** —— 前者是后者的前提
 > 商业化定位：**开源内核 + 企业控制面 + 合规交付物**；本期不启动商业化，只做架构留缝
@@ -11,6 +11,13 @@
 ## 一、规划依据
 
 三份调研收敛出的结论，是本规划的全部前提：
+
+**0. 🎯 生态位（2026-09-17 第六次修订新增，其余各条都从属于它）**：本产品瞄准的是 **链上稳定币 × agent 小额 402 支付**，**明确不做大额**。理由不是打不过 Shopify/Stripe，是**卡组织费率结构**（$0.30 + 2.9%）在 $0.005 的粒度上物理不可行——**这个位由费率结构保证，不由技术优势保证**。完整论述见 [commercialization.md](./commercialization.md) §零。
+
+> ⚠️ **这一条改变了下面若干条的读法**：
+> - **买方**：是**财务 / AP 对账**（关不了账），不是合规 —— 合规在小额场景暂时不在场
+> - **产品**：是**账**（聚合与对账），不是收据 —— 收据是原料，不是交付物
+> - **三根支柱的意义变了**（能力不变）：授权更重要、完整性是为聚合数字的可信度、零外泄是为保护支付流量本身这个商业情报
 
 1. **"签名收据"已商品化**（PEAC、TrustBench、agentstamp、Vaultra、BlueTier、Traceipt）。
 2. **"Merkle + 上链锚定 + 离线验证"正在商品化，半衰期 6–12 个月**（Traceipt 已上线，x402 草案已写成标准，IETF 在推）。
@@ -331,6 +338,57 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 
 ---
 
+### P0-9. 收据先于结算写入 ⭐ 新发现（架构评估），最高优先
+
+> ⚠️ **与生态位无关也必修。** 这是**丢钱 + 丢证据**，而且丢的正是产品声称要防的事。详见 [architecture-gaps.md](./architecture-gaps.md) §A1。
+
+**现状**（`src/tools/pay.ts` 已付路径，逐行核实）：
+
+```ts
+const payment = await services.payments.pay(quote);   // :204  ← 钱在这里动了（/verify + /settle 两次网络往返）
+const segments = buildSegments(...);                  // :206
+const receipt = buildReceipt({ ... prevHash });       // :215
+record(services, receipt);                            // :227  ← 收据在这里才落库
+```
+
+**204 与 227 之间存在窗口：钱已结算，收据未写。** 窗口内崩溃的后果：
+
+1. 钱动了，没有任何记录
+2. 幂等键 `requestId` 只在本地库（`getReceiptByRequestId` 查的就是那张还没写的表）
+3. agent 重试 → 幂等检查查不到 → **再付一次**
+
+> 📌 **同一个文件里已有正确做法**：三条拒绝路径（`:121` / `:144` / `:180`）都是**先 `buildReceipt` 再 `record`**——因为拒绝时没有钱要动。**问题只出在已付路径。**
+
+- **做什么**：已付路径拆成两步——先写一条 `pending` 收据（**含 `requestId`，在动钱之前**），结算成功后再更新为 `paid` + `txHash`
+- **备选**：把 EIP-3009 的 `nonce` 持久化做上游幂等（`facilitator.ts` 已随机生成，但未落库）
+- **涉及**：`src/tools/pay.ts`、`src/store/db.ts`（`pending` 状态与更新路径）、`src/types.ts`（`ReceiptStatus`）、`test/pay.test.ts`
+- **验收**：模拟"结算成功但写库前崩溃"，恢复后重试**不会**重复付款；`verify` 能识别遗留的 `pending` 收据
+
+### P0-10. `seq` 交给 SQLite 分配 ⭐ 新发现（架构评估），高优先
+
+> ⚠️ **D8 的另一个入口。** D8 修好了"同毫秒按内容哈希排序"，但没消除"`seq` 本身可能重复"。详见 [architecture-gaps.md](./architecture-gaps.md) §A2。
+
+**现状**（`src/store/db.ts` `appendReceipt`）：
+
+```sql
+INSERT OR IGNORE INTO receipts (seq, ...)
+VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
+```
+
+两个问题叠加：
+
+1. `better-sqlite3` 在单进程内串行化这个读-写，但**两个进程并发时会读到同一个 `MAX(seq)`** → 重复 `seq`
+2. **`INSERT OR IGNORE` 按 `id` 去重（`id TEXT PRIMARY KEY`），`seq` 上没有唯一约束** → 撞号不会被挡住
+
+后果：重复 `seq` → `listReceipts` 顺序不稳定 → `prevHash` 比对失败 → **报 `tampered`**。
+
+- **做什么**：`seq` 交给 SQLite（`INTEGER PRIMARY KEY AUTOINCREMENT` 或直接用 `rowid`），应用层不再计算；叠加 `UNIQUE` 兜底
+- **涉及**：`src/store/db.ts`（建表 + 迁移 + `appendReceipt`）、新增并发写入回归测试
+- **验收**：两个进程并发追加不同收据，`seq` **无重复**；`verify` 恒为 `verified`
+- ⚠️ **注意与 P0-8 的关系**：P0-8 选择了"新增 `seq` 列 + 迁移"方案。本条是它的收尾——**既然引入了 `seq`，就必须保证它唯一且单调**，否则只是把一个不确定性换成了另一个。
+
+---
+
 ## 五、P1：核心差异化
 
 > P0 修完后再做。这一层决定 Ledgeroot 是"另一个收据工具"还是"唯一能做这三件事的系统"。
@@ -375,6 +433,48 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 - **做什么**：`Mandate.agentId` 从字符串升级为可选的注册表校验（存在性 + 可选声誉查询）
 - **涉及**：`src/mandate.ts`、`src/policy/`（可选新增一条策略）、`test/mandate.test.ts`
 - **验收**：带无效 agentId 的 mandate 可被拒绝（策略可配置为 fail-closed）
+
+### P1-5. 索引与热路径（架构评估新增）
+
+> 依据 [architecture-gaps.md](./architecture-gaps.md) §B1。**全库没有一个 `CREATE INDEX`。**
+
+**现状**：每一次 `ledgeroot_pay` 跑 4 次未索引全表扫描，其中两次（`cumulativeSpent` 按 mandate+status、`callTimestamps` 按 endpoint）**还会 `JSON.parse` 整个匹配集**。单笔 O(n) → 一个月 O(n²)。**100 万条时每笔支付要反序列化上百万个对象——这不是"慢一点"，是跑不起来。**
+
+- **做什么**：为 `request_id`、`mandate_id`、`endpoint`、`status`、`seq` 建索引；`listReceipts` 加分页（`LIMIT`/游标）；避免在热路径上加载全量收据
+- **涉及**：`src/store/db.ts`（建表 + 迁移）、`src/tools/pay.ts`（改为定向查询）、`src/tools/receipts.ts`
+- **验收**：10 万条收据下，单笔 `ledgeroot_pay` 的本地耗时**不随表增长**（基准测试）
+
+### P1-6. 对账与聚合层 ⭐ 生态位的产品本体
+
+> 依据 [architecture-gaps.md](./architecture-gaps.md) §B1 与 [commercialization.md](./commercialization.md) §三 §四。**这是 §零 定义的生态位里唯一能收费的那一层，目前完全不存在。**
+
+**现状**：全库**没有一处 SQL 聚合**（无 `GROUP BY` / `SUM` / `COUNT`）。唯一的"按维度分组"是 `mandatekey/components/timeline.tsx` 里对已全量加载的数组做客户端 `Map` 分组——UI 便利，不是聚合。**无异常/趋势检测，无 ERP/对账导出**（两条导出路径都是审计证据包：原始收据 + Merkle 证明 + 公钥）。
+
+- **做什么**：
+  - 按对手方 / 按 agent / 按任务 / 按时间桶的**聚合查询**
+  - **可下钻**：从聚合数字回到单张收据
+  - **对账导出**：能进 ERP 的数据结构（不是审计证据包）
+  - **异常视图**：谁在涨、哪条策略拦得最多
+- **涉及**：新增聚合模块；`mandatekey/app/api/` 新增路由；`src/store/db.ts` 的查询层
+- **验收**：100 万条收据下，月度聚合在**秒级**返回；导出的结构能被真实财务/AP 人员读入
+- ⚠️ **前置**：本条依赖 **C1 的设计决定**（见 §十）——元数据集中到什么程度，决定聚合层的数据模型
+- ⚠️ **同时依赖 P1-7**：聚合的可信度建立在"能证明没漏"之上
+
+### P1-7. 增量验证 + 完整性的承重作用（架构评估新增）
+
+> 依据 [architecture-gaps.md](./architecture-gaps.md) §B2 与 §C1。
+
+**现状**：`verifyReceiptChain` 遍历**每一条**收据逐条重算 SHA-256 与 Ed25519；**无增量、无检查点**。100 万条 = 100 万次验签/每次运行。`verify --check-chain` 更糟：**每笔已付收据 2 次 RPC，且 `Promise.all` 无并发上限**——会打爆节点并撑爆内存。
+
+- **做什么**：
+  - 增量验证：记录"上次验到第几条"，从检查点继续（锚定边界可复用）
+  - `--check-chain` 加**并发上限**与分批
+- **验收**：验证耗时可从上次检查点续算，而非从头
+- ⭐ **关键认识**：**这一条与 N6（held-set completeness）是同一件事，而理由从"对标对手"变成了"我们自己的架构承重墙"。**
+  - 生态位的产品是**跨 fleet 的聚合**，而聚合需要把 N 个 agent 的数字汇到一处（见 C1）
+  - **如果每个 agent 锚定的是 `(receiptCount, root)`，控制面不需要看到任何收据，就能验证"这个 agent 报的聚合数字没有漏"**
+  - **没有完整性证明，分布式聚合只能"相信 agent 上报的数字"** —— 而那是 §零 生态位里最不能接受的事
+  - → **N6 因此不只是竞品对齐项，它是 P1-6 能否成立的前提。** 见 §2.4 的 N6 与 [standards-landscape.md](./standards-landscape.md) §二
 
 ---
 
@@ -472,6 +572,12 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 | **Q4** | facilitator 多路化的目标链优先级？（Base / Solana / BNB） | 工作量与生态契合度 | 待定 |
 | **Q5** | 支柱 1 的对外表述最终定稿？ | 全部文案 | 待定 |
 | **Q6** | **P0-8 的排序修复用哪个方案？**（新增 `seq` 列 vs 依赖 `rowid`） | 是否做 schema 迁移 | 待定，推荐方案 A |
+| **Q7** 🎯 | **零外泄 vs 聚合的边界在哪里？**（架构评估新增，见 [architecture-gaps.md](./architecture-gaps.md) §C1） | ⚠️ **决定控制面 schema 与 P1-6 的数据模型** | **待定——但必须在 P1-6 之前决定，否则返工** |
+| **Q8** | **现在上多写 / 多租户，还是先做单 agent？** | ⚠️ 决定 `seq` 分配与访问层要不要现在重做（见 P0-10、`architecture-gaps.md` §B3 §B4） | 待定，**越晚越贵** |
+
+> 🔴 **Q7 是当前最关键的未决项。** `commercialization.md` §零 的产品是"跨 fleet 的账"，而架构是"每 agent 本地一个 SQLite"——**跨 fleet 聚合需要把 N 个 agent 的数字汇到一处，而"一处"就是服务器**，这与"零外泄"和"控制面只看元数据"的设计原则存在张力。三条候补方案（元数据集中 / 收据复制 / 每 agent 自算 rollup + 锚定链接）见 [architecture-gaps.md](./architecture-gaps.md) §C1，**推荐第三条**，因为它同时保住了零外泄与可验证性。
+>
+> 🔴 **Q8 的代价随时间上升**：`seq` 分配（P0-10）与单写进程（`better-sqlite3` 同步阻塞）在单 agent 下无害，在舰队下会直接崩。**如果目标确定是舰队形态，这两条现在改比以后改便宜一个数量级。**
 
 ---
 
@@ -489,11 +595,17 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 
 ---
 
-## 附：与三份文档的对应关系
+## 附：与各文档的对应关系
 
 | 本规划条目 | 来源 |
 |---|---|
-| P0-1 ~ P0-7 | `threat-landscape.md` §四 C1 源码核验表、§九 防御清单 |
+| **生态位（§一 第 0 条）** | **`commercialization.md` §零** —— 链上稳定币 × agent 小额 402 支付 |
+| P0-1 ~ P0-8 | `threat-landscape.md` §四 C1 源码核验表、§九 防御清单 |
+| **P0-9 / P0-10** | **`architecture-gaps.md` §A1 §A2 —— 与规模无关的真 bug** |
+| **P1-5（索引）** | **`architecture-gaps.md` §B1** |
+| **P1-6（对账与聚合层）** | **`commercialization.md` §三 §四 + `architecture-gaps.md` §B1** |
+| **P1-7（增量验证）** | **`architecture-gaps.md` §B2 §C1** |
+| **Q7 / Q8（待定决策）** | **`architecture-gaps.md` §C1 §B3 §B4** |
 | 支柱 1 修订 | `threat-landscape.md` §五 x402b 条目（ERC-6551 挑战） |
 | 支柱 2 | `threat-landscape.md` §四 A2（x402 草案测试 3.2.4） |
 | 支柱 3 | `threat-landscape.md` §七 半衰期表末三行 |
@@ -502,9 +614,17 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 | P2-2 生态提交 | `threat-landscape.md` §三 B1 |
 | 非目标前六条 | `trustbench-competitive-analysis.md` §六、`threat-landscape.md` §八 |
 | 非目标后三条 | `commercialization.md` §六 |
-| **P1-1 的优先级** | `commercialization.md` §四 —— **完整性证明同时是商业论点本身，不是 nice-to-have** |
+| **P1-1 的优先级** | `commercialization.md` §四 —— **完整性证明同时是商业论点本身，不是 nice-to-have**；⭐ **并见 P1-7：它还是分布式聚合的承重墙** |
 | **P1-2 的必要性** | `commercialization.md` §五 留缝 1 —— 第三方独立验证是"卖报告"的前置条件 |
+| **N1–N12（§2.4）** | `standards-landscape.md` §二 §七、`vaara-competitive-analysis.md` §三 §七 |
 
 > **商业化对路线图的影响**：见 [commercialization.md](./commercialization.md)。
-> 核心是一条：**P1-1（完整性证明）的优先级被商业化逻辑进一步抬高** —— 它是唯一可售的差异点。
+> ⚠️ **第六次修订更正**：此处原写"P1-1（完整性证明）的优先级被商业化逻辑进一步抬高 —— 它是**唯一可售的差异点**"。**该表述已失效**（Vaara v1.4.0 已产品化同类机制，见 [standards-landscape.md](./standards-landscape.md) §二）。
+>
+> **但它现在有两个不是"唯一性"的理由，而且都更强**：
+> 1. **它是聚合层的承重墙**（P1-7）—— 没有"能证明没漏"，跨 fleet 的账就只能靠信任 agent 上报的数字
+> 2. **它是零外泄与聚合之间的调和机制**（Q7）—— 每个 agent 锚定 `(receiptCount, root)`，控制面不必看到任何收据就能验证其聚合数字的完整性
+>
+> → **优先级不变，但理由从"别人没有"换成了"我自己的架构依赖它"。**
+>
 > 但商业化**不在本期启动**，只做"留缝"（`commercialization.md` §五）。
