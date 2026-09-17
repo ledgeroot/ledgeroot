@@ -37,6 +37,9 @@ export interface Mandate {
   signature?: string;
 }
 
+/** The settlement protocol a receipt's transaction segment describes. */
+export const SETTLEMENT_PROTOCOL_X402 = "x402";
+
 /** The six audit segments that make up one receipt. */
 export interface ReceiptSegments {
   /** 1. Intent — why the agent wanted to pay. */
@@ -47,8 +50,25 @@ export interface ReceiptSegments {
   plan: { quoteHash: string; quote: Record<string, unknown> };
   /** 4. Call — per-policy evaluation results. */
   call: { policyResults: Array<{ policyId: string; decision: PolicyDecision }> };
-  /** 5. Transaction — on-chain settlement. */
-  tx: { txHash?: string; chainId?: number; payer?: string };
+  /**
+   * 5. Transaction — how the money moved.
+   *
+   * `protocol` names the settlement protocol. It is absent on receipts written
+   * before the field existed, which are all x402.
+   *
+   * Do not read this segment as "a paid receipt always carries a chain
+   * transaction". x402 settles one payment with one EVM transaction, but other
+   * protocols do not: MPP batches many requests into a single settlement, and
+   * its card rail has no chain at all. Those protocols record their own
+   * settlement reference here, and a verifier that does not understand them
+   * reports the record as incomplete rather than passing it.
+   */
+  tx: {
+    protocol?: string;
+    txHash?: string;
+    chainId?: number;
+    payer?: string;
+  };
   /**
    * 6. Delivery — what the agent actually received for the payment, recorded
    * only when the caller reports the response body. Ledgeroot settles the

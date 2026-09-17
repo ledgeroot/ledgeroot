@@ -1,5 +1,6 @@
 import { createPublicClient, decodeFunctionData, http, parseAbi, type Hex } from "viem";
 import type { Receipt } from "../types.js";
+import { SETTLEMENT_PROTOCOL_X402 } from "../types.js";
 import { fromUnits, toUnits } from "../decimal.js";
 import { MONAD_TESTNET_X402 } from "../x402/facilitator.js";
 import { incomplete, tampered, type Issue } from "./verifier.js";
@@ -74,7 +75,18 @@ export async function checkSettlement(
   receipt: Receipt,
   read: SettlementReader,
 ): Promise<Issue[]> {
-  const { txHash, chainId, payer } = receipt.segments.tx;
+  const { protocol, txHash, chainId, payer } = receipt.segments.tx;
+
+  // This reader only knows how to resolve an EVM transaction. A receipt settled
+  // by some other protocol is not thereby suspect — MPP batches many requests
+  // into one on-chain settlement, and its card rail touches no chain at all —
+  // it just is not something this check can confirm, which is missing evidence
+  // rather than a mismatch.
+  if (protocol !== undefined && protocol !== SETTLEMENT_PROTOCOL_X402) {
+    return [
+      incomplete(`receipt ${receipt.id}: no on-chain settlement check for protocol "${protocol}"`),
+    ];
+  }
 
   if (!txHash || chainId === undefined) {
     return [incomplete(`receipt ${receipt.id}: no settlement transaction recorded`)];

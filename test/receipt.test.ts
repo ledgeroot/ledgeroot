@@ -51,6 +51,33 @@ describe("receipt chain", () => {
     ]);
   });
 
+  it("does not pass a settlement protocol it cannot check", () => {
+    // MPP settles on more than one rail, and its card rail has no chain at all,
+    // so a payment need not carry a transaction hash. We cannot call such a
+    // record verified, and we cannot call it tampered either.
+    const segments2 = segments();
+    segments2.tx = { protocol: "mpp", payer: "0xpayer" };
+    const receipt = sign(buildReceipt({ status: "paid", segments: segments2 }));
+
+    const result = verifyReceipt(receipt, [TEST_PUBLIC_KEY]);
+    expect(result.status).toBe("incomplete");
+    expect(result.issues).toEqual([
+      { kind: "incomplete", message: expect.stringContaining('no settlement check for protocol "mpp"') },
+    ]);
+  });
+
+  it("still holds x402 to the transaction hash rule once it is labelled", () => {
+    const segments2 = segments();
+    segments2.tx = { protocol: "x402", payer: "0xpayer" };
+    const receipt = sign(buildReceipt({ status: "paid", segments: segments2 }));
+
+    const result = verifyReceipt(receipt, [TEST_PUBLIC_KEY]);
+    expect(result.status).toBe("incomplete");
+    expect(result.issues).toEqual([
+      { kind: "incomplete", message: expect.stringContaining("missing transaction hash") },
+    ]);
+  });
+
   it("lets a definite mismatch outrank missing evidence", () => {
     // Same receipt, now both tampered (content no longer matches its hash) and
     // incomplete (still no tx hash). The status must not soften to incomplete.

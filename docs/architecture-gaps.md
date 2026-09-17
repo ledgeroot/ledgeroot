@@ -27,6 +27,8 @@
 
 **核心判断**：缺的是**系统工程的常识部分**（索引、批量、分区、聚合），不是难的部分。密码学、fail-closed 语义、三态验证、链上结算校验——**难的部分已经做完而且做对了**。所以这不是"重写"，是"补一层"。
 
+> 📌 **§七 是已落地的改动**（不是待办）：已把"已付收据必然有链上交易"这个假设清掉，为 **MPP** 等多协议预留接缝。触发原因是 Cloudflare Agents SDK 同时支持 x402 与 MPP。
+
 ---
 
 ## 一、A 类：与规模无关的真 bug
@@ -237,6 +239,8 @@ export const MONAD_FACILITATOR_URL = "https://x402-facilitator.molandak.org";
 > 📌 **可复用的部分**：`FacilitatorNetworkConfig` 已经把 `chainId` / `network` / `scheme` / `usdcAddress` / domain 全抽出来了——**类型是对的，只是实例只有一个**。所以"支持多链"**不是重构，是补几个实例 + 一个选择逻辑**。改动会触及 `bootstrap.ts`、`chains.ts`、`onchain.ts` 与 facilitator 层，但都是加分支，不是改结构。
 >
 > ⚠️ **注意这与"选错链"是两回事**：即使永远只用 Monad，硬编码也让**测试网 → 主网**这一步变成改代码而不是改配置——而那一步迟早要走。
+>
+> 📌 **同类问题还有一个维度**：`config` 抽象的是**链**，没有抽象**协议**。`X402Quote` / `PaymentResult` 与 `segments.tx` 都假定"一次支付产出一笔 EVM 交易"。协议维度的接缝已于 2026-09-17 补上，见 §七。
 
 #### D1c. 测试网锚定的证据价值
 
@@ -298,6 +302,70 @@ export const MONAD_FACILITATOR_URL = "https://x402-facilitator.molandak.org";
 **但有一条是真的要重做**：`store/db.ts` 的数据访问层要为高并发读写与聚合重新设计（`seq` 分配、索引、分页、批量、租户作用域）。这一个文件是核心，其余多是加配置与加层。
 
 > 📌 **与竞品的对照**：Vaara 在 5 个月内发了 50 套一致性套件、SLSA L3、TPM 绑定——**但它的起步形态是"一个代理 + 一个本地 trail"**，与 Ledgeroot 同量级。**它的领先是节奏，不是架构代差。** 见 [vaara-competitive-analysis.md](./vaara-competitive-analysis.md) §6.3。
+
+---
+
+## 七、已为多协议预留的接缝（2026-09-17 实现）
+
+> 📌 **本节记录一次已落地的改动**，不是待办。触发原因：Cloudflare 的 Agents SDK 同时支持 **x402 与 MPP**，所以"只支持 x402"是个错的假设。
+
+### 7.1 被清掉的假设
+
+改动之前，代码里有一句硬编码的前提：**"已付收据必然有一笔链上交易"**。它散在三个地方：
+
+| 位置 | 原逻辑 |
+|---|---|
+| `verify/verifier.ts` `verifySettlement` | `paid` 且无 `txHash` → **永远 `incomplete`** |
+| `verify/onchain.ts` `checkSettlement` | 要求 `txHash` + `chainId`，否则 `incomplete` |
+| `types.ts` `segments.tx` | `{ txHash?, chainId?, payer? }`——**没有字段能说"由别的机制结算"** |
+
+**MPP 从两个方向打破它**：
+
+1. **Sessions**（Tempo）：agent 开一个通道，**逐请求签离线凭证**，最后**一次性链上结算**。于是"一笔支付 ↔ 一笔交易"变成 **N : 1**，单笔支付当下没有 `txHash`。
+2. **卡轨道**：MPP 支持卡与 BNPL（Visa 已通过 Acceptance Platform 背书并发布卡规格），**这条轨道上根本没有链**。
+
+> ⚠️ **置信度说明**：以上对 MPP 的描述来自 Stripe / Tempo 博客与二手报道，**未读 MPP 官方规范全文**（见 §7.4）。
+
+### 7.2 改了什么
+
+**核心动作是把"必须有钱上交易"换成"必须声明结算协议"，并把未知协议报为 `incomplete` 而不是放行。**
+
+| 文件 | 改动 |
+|---|---|
+| `types.ts` | `segments.tx` 新增可选 `protocol?: string`；导出 `SETTLEMENT_PROTOCOL_X402 = "x402"`。注释里明确写了"不要把这一段读成'已付收据一定有链上交易'" |
+| `verify/verifier.ts` | `verifySettlement` 按协议分派：**`protocol` 缺省或为 `x402`** → 沿用原规则（要求 `txHash`）；**其他协议** → `incomplete`，理由 `no settlement check for protocol "<X>"` |
+| `verify/onchain.ts` | `checkSettlement` 先看协议：非 x402 → `incomplete`（"这个 reader 只懂 EVM，不是怀疑它"）；x402 或缺省 → 原路径 |
+| `tools/pay.ts` | 写入时打上 `protocol: "x402"` |
+
+**为什么"未知协议 → incomplete"是唯一正确的选择**：它可能是完整的，我们只是查不了。报 `verified` 就是宣称做了一次没做的检查；报 `tampered` 就是冤枉它。这正是既有三态纪律的延伸。
+
+### 7.3 之后：向后兼容性已验证
+
+`protocol` 是**可选**字段，所以：
+
+- **旧收据**（无该字段）→ 重算哈希一致，**验证结果不变**
+- **新收据** → 带 `protocol: "x402"`，哈希随之不同（这是预期的；链上靠 `prevHash` 重新链接，不依赖某个固定哈希值）
+
+验证方式：`npm run typecheck` ✅ · `npm test` **81 passed**（新增 3 个用例）· `npm run build` ✅ · dry-run demo 走完整 loop 且 `verify` 返回 `verified` ✅
+
+**新增的测试**：
+- `receipt.test.ts`——未知协议 → `incomplete` 而非放行；打了 `x402` 标签但仍无 `txHash` → 仍按原规则报 `incomplete`
+- `onchain.test.ts`——非 x402 协议时，**即使 reader 能确认那笔交易**也跳过并报 `incomplete`（证明是"按协议跳过"而不是"链上对不上"）
+
+### 7.4 故意没做的事
+
+**没有实现 MPP，也没有预设 MPP 的载荷形状。** 两个理由：
+
+1. **没读规范全文**。从二手描述里已知 MPP 至少有 Sessions 与卡两种形态，但**字段级形状不清**。现在编一个 `{channelId, voucherSeq, cumulative}` 出来，大概率要返工。
+2. **接缝已经够了**。现在加 MPP 是**加一个 provider + 一个 verifier**，不是改结构——因为"协议"这个维度已经显式存在于类型、写入路径与验证分派里。
+
+**下一步（等 MPP 规范和真实需求）**：
+- 读 MPP 规范，确定 Sessions 下的结算引用该记什么
+- 实现 `MppPaymentProvider`（`PaymentProvider` 接口已经在，见 `src/x402/facilitator.ts`）
+- 实现 `mpp` 的结算校验，替换 `verifySettlement` / `checkSettlement` 里的 `incomplete` 分支
+- ⚠️ **届时会撞上 C1 的同一类问题**：Sessions 的 N:1 结算意味着**收据与交易不是一一对应**，这会影响 epoch 锚定的边界语义（当前按 `receiptCount` 切片，假设每张收据独立）
+
+> 📌 **还有一处协议假设没动**：`X402Quote` 与 `PaymentResult`（`src/x402/facilitator.ts`）仍然假定"一次支付产出一个 `txHash` + `chainId`"。这是**下一个要抽象的接缝**，但因为它会动到导出的公共 API（`index.ts` 有 re-export），本次没有改。
 
 ---
 

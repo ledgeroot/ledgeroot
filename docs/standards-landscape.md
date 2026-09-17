@@ -331,7 +331,29 @@ Vaara 与 NovaFabric 都用 **RFC 3161**，Vaara 还区分了"技术锚（可自
 
 建议动作：**保留链上锚定作为可选技术锚，但把 eIDAS 合格时间戳加进硬需求**——否则在 EU 场景里始终缺一张对手已经拿到的凭据。
 
-### 7.4 最省力的正确动作
+### 7.5 支付协议层：x402 与 MPP 要并列支持（2026-09-17 新增）
+
+> ⚠️ **"只支持 x402"是个错的假设。** 这一条是本文档初版遗漏的。
+
+| | **x402** | **MPP**（Machine Payments Protocol） |
+|---|---|---|
+| 出处 | Coinbase 提出，现由 **x402 Foundation（Linux Foundation）** 治理 | **Stripe + Tempo Labs** 共同编写 |
+| 背书 | Coinbase 生态、Cloudflare | **Visa**（经 Acceptance Platform，已发卡规格与 SDK）、**Circle**（已发官方 USDC 规格） |
+| 传输 | HTTP 402：challenge → 付款 → 重试 → 拿到资源 | HTTP 402：**challenge → credential → receipt** |
+| 结算粒度 | **按请求**（一笔支付一笔交易） | 按请求 **或 Sessions**（通道 + 逐请求离线凭证，**最后一次性结算**） |
+| 轨道 | 稳定币（USDC / EIP-3009） | **稳定币 + 卡 + BNPL** |
+| 采用 | Cloudflare Agents SDK | **Cloudflare Agents SDK 同样支持** |
+
+**两条对我们的直接影响**：
+
+1. **对收款侧**：Cloudflare 同时支持两者 → **供给会同时出现在两条协议上**，只认 x402 会漏掉一半。
+2. **对证据层**：MPP 的 **Sessions 把"一笔支付 ↔ 一笔交易"变成 N : 1**，**卡轨道则完全没有链**。这直接打破了"已付收据必然有链上交易"——该假设已于 2026-09-17 清除，见 [architecture-gaps.md](./architecture-gaps.md) §七。
+
+> 📌 **置信度**：本表来自 Stripe / Tempo 博客与二手报道，**未读 MPP 官方规范全文**。字段级形状不明，所以本次只清了假设、预留了接缝，**没有实现 MPP**。
+>
+> ⚠️ **注意命名撞车**：检索时会遇到 "Agent Payments Protocol"（AP2）与 "Agentic Payments" 等相近名称，**与 MPP 不是一回事**。
+
+### 7.6 最省力的正确动作
 
 按 `roadmap.md` §一 既有的排序原则（"接入标准或停止自研竞争"），当前最优解是：
 

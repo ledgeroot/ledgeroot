@@ -120,6 +120,18 @@ describe("checkSettlement", () => {
     expect(issues).toEqual([expect.objectContaining({ kind: "incomplete" })]);
   });
 
+  it("does not claim to check a settlement protocol it has no reader for", async () => {
+    const receipt = paidReceipt({
+      tx: { protocol: "mpp", txHash: TX, chainId: CHAIN, payer: PAYER },
+    });
+    // The reader would happily confirm this transaction. The check is skipped on
+    // protocol grounds, not because the chain disagreed — and a protocol we
+    // cannot read is missing evidence, never a pass.
+    const issues = await checkSettlement(receipt, reader(authorized()));
+    expect(issues).toEqual([expect.objectContaining({ kind: "incomplete" })]);
+    expect(has(issues, /no on-chain settlement check for protocol "mpp"/)).toBe(true);
+  });
+
   it("cannot check a chain it has no settlement contract for", async () => {
     const receipt = paidReceipt({ tx: { txHash: TX, chainId: 999, payer: PAYER } });
     const issues = await checkSettlement(receipt, reader(authorized()));

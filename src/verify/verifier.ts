@@ -1,4 +1,5 @@
 import type { PublicKey, Receipt } from "../types.js";
+import { SETTLEMENT_PROTOCOL_X402 } from "../types.js";
 import { recomputeReceiptHash } from "../receipt/builder.js";
 import { RECEIPT_ALG, verifyReceiptSignature } from "../receipt/signing.js";
 import { merkleRoot } from "../anchor/merkle.js";
@@ -41,9 +42,26 @@ function verifyReceiptSelf(receipt: Receipt): Issue[] {
   return [tampered(`receipt ${receipt.id}: self hash mismatch`)];
 }
 
+/**
+ * A paid receipt has to say how it settled, but not every protocol settles with
+ * a chain transaction. x402 does — one payment, one EVM transaction — so it is
+ * held to the txHash rule, and receipts written before `protocol` existed are
+ * all x402. A protocol this verifier does not understand may well be complete;
+ * we simply cannot tell, and reporting it as anything other than missing
+ * evidence would be claiming a check we did not perform.
+ */
 function verifySettlement(receipt: Receipt): Issue[] {
-  if (receipt.status !== "paid" || receipt.segments.tx.txHash) return [];
-  return [incomplete(`receipt ${receipt.id}: paid receipt missing transaction hash`)];
+  if (receipt.status !== "paid") return [];
+  const { protocol, txHash } = receipt.segments.tx;
+
+  if (protocol === undefined || protocol === SETTLEMENT_PROTOCOL_X402) {
+    if (txHash) return [];
+    return [incomplete(`receipt ${receipt.id}: paid receipt missing transaction hash`)];
+  }
+
+  return [
+    incomplete(`receipt ${receipt.id}: no settlement check for protocol "${protocol}"`),
+  ];
 }
 
 /**

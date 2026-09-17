@@ -6,6 +6,7 @@ import { signReceipt } from "../receipt/signing.js";
 import { getSigningKey } from "../env.js";
 import { add } from "../decimal.js";
 import type { Receipt, ReceiptSegments } from "../types.js";
+import { SETTLEMENT_PROTOCOL_X402 } from "../types.js";
 import type { X402Quote } from "../x402/facilitator.js";
 import { computePolicyIntersection } from "../mandate.js";
 
@@ -204,7 +205,12 @@ export async function handlePay(
   const payment = await services.payments.pay(quote);
 
   const segments = buildSegments(input, policyResults, mandate.issuer, policyIntersection);
-  segments.tx = { txHash: payment.txHash, chainId: payment.chainId, payer: payment.payer };
+  segments.tx = {
+    protocol: SETTLEMENT_PROTOCOL_X402,
+    txHash: payment.txHash,
+    chainId: payment.chainId,
+    payer: payment.payer,
+  };
   if (input.responseBody !== undefined) {
     segments.delivery = {
       payloadHash: contentHash(input.responseBody),

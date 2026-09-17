@@ -111,6 +111,7 @@ describe("receipt segments", () => {
   it("records the settlement transaction and its payer", async () => {
     const receipt = await payWith({});
     expect(receipt?.segments.tx).toEqual({
+      protocol: "x402",
       txHash: "0xsettlementtx",
       chainId: 10143,
       payer: "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A",
