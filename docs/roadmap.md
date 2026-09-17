@@ -14,7 +14,7 @@
 
 1. **"签名收据"已商品化**（PEAC、TrustBench、agentstamp、Vaultra、BlueTier、Traceipt）。
 2. **"Merkle + 上链锚定 + 离线验证"正在商品化，半衰期 6–12 个月**（Traceipt 已上线，x402 草案已写成标准，IETF 在推）。
-3. **"预行动闸门"这个词已被 Black_Wall 占据**，且它已有定价与真实牵引（104 次/周 npm 下载）。
+3. **"预行动闸门"这个词已被两方占据** —— Black_Wall（有定价与真实牵引，`blackwall-mcp` **111 次/周** npm 下载）与 **arXiv TrustBench 2603.09157（ASU + UCLA，"after an agent formulates an action but before execution"，<200ms）**。**不要用这个词做定位**（见 §三 用词警告）。
 4. **PEAC 是载波不是对手** —— 它明确声明不做 policy engine、不做路由。
 5. **Coinbase 是分发层** —— 不被索引等于不存在。
 6. **Pieverse（$7M，Animoca + UOB 领投，代币 + 2.4 亿用户分发）用 ERC-6551 提供了链上强制的消费限额** —— 这是对"用户授权"支柱的真实挑战。
@@ -43,18 +43,22 @@
 | 测试（9 个 TS + 1 个 Solidity） | `test/`, `contracts/test/` | ✅ 存在 |
 | 已发 npm（`ledgeroot@0.1.2`） | `package.json` | ✅ 已发布 |
 
-### 2.2 已确认的正确性缺陷（源码级，P0 处理）
+### 2.2 正确性缺陷（源码级，P0）—— ✅ 7/8 已修，仅 D6 未修
 
-| # | 缺陷 | 位置 | 后果 |
-|---|---|---|---|
-| D1 | **Merkle 无域分隔**：`sha256Hex(level[i] + right)`，叶与内部节点同构造，且对十六进制字符串而非字节运算 | `src/anchor/merkle.ts` | 结构性第二原像问题；**Traceipt 已用 RFC 6962 做对** |
-| D2 | **收据完全无签名** | `src/receipt/builder.ts`、`src/types.ts` | 能证"没被改"，**不能证"谁做的陈述"** |
-| D3 | **`incomplete` 是死代码**：`classify()` 只返回 `verified` / `tampered` | `src/verify/verifier.ts` | README 宣称三态，实际两态；"缺 txHash"被误判为"被篡改" |
-| D4 | **锚定后误报篡改**：`verify` 用全量收据对比 `latestAnchor().root` | `src/tools/receipts.ts` | 锚定后再发生任何支付 → 重算根不匹配 → 报 `tampered` |
-| D5 | **第六段交付凭据是假的**：`segments.delivery = { payloadHash: payment.txHash }` | `src/tools/pay.ts` | 把 txHash 抄进交付证明字段；品牌核心能力目前是占位符 |
-| D6 | **锚定合约无权限控制**：`anchor(bytes32)` 任何人可调 | `contracts/src/LedgerootAnchor.sol` | "上链了"只证明"有人锚了这个根"；x402 草案攻击 A4 已把同类问题标为可伪造 |
-| D7 | **无链上结算内容校验**：只信任 facilitator 返回的 `txHash` | `src/verify/verifier.ts` | **出错或被攻破的 facilitator 返回伪造 txHash，验证照样报 `verified`** |
-| **D8** | **收据排序不确定**：`listReceipts` 按 `created_at ASC, id ASC` 排序，同毫秒时次级排序回退到**内容哈希** `id`，与追加顺序无关 | `src/store/db.ts` | ⚠️ **旗舰的离线验证会间歇性误报 `tampered`**（实测 12 次里 7 次）；且 epoch 根依赖该顺序 → **锚定不可复现** |
+> ⚠️ **本表为缺陷原始登记，状态见最右列。**（2026-09-17 复核）
+
+| # | 缺陷 | 位置 | 后果 | 状态 |
+|---|---|---|---|---|
+| D1 | **Merkle 无域分隔**：`sha256Hex(level[i] + right)`，叶与内部节点同构造，且对十六进制字符串而非字节运算 | `src/anchor/merkle.ts` | 结构性第二原像问题；**Traceipt 已用 RFC 6962 做对** | ✅ 已修（P0-1） |
+| D2 | **收据完全无签名** | `src/receipt/builder.ts`、`src/types.ts` | 能证"没被改"，**不能证"谁做的陈述"** | ✅ 已修（P0-2） |
+| D3 | **`incomplete` 是死代码**：`classify()` 只返回 `verified` / `tampered` | `src/verify/verifier.ts` | README 宣称三态，实际两态；"缺 txHash"被误判为"被篡改" | ✅ 已修（P0-3） |
+| D4 | **锚定后误报篡改**：`verify` 用全量收据对比 `latestAnchor().root` | `src/tools/receipts.ts` | 锚定后再发生任何支付 → 重算根不匹配 → 报 `tampered` | ✅ 已修（P0-4） |
+| D5 | **第六段交付凭据是假的**：`segments.delivery = { payloadHash: payment.txHash }` | `src/tools/pay.ts` | 把 txHash 抄进交付证明字段；品牌核心能力原为占位符 | ✅ 已修（P0-5） |
+| D6 | **锚定合约无权限控制**：`anchor(bytes32)` 任何人可调 | `contracts/src/LedgerootAnchor.sol` | "上链了"只证明"有人锚了这个根"；x402 草案攻击 A4 已把同类问题标为可伪造 | ❌ **仍未修 ← 唯一剩余 P0** |
+| D7 | **无链上结算内容校验**：只信任 facilitator 返回的 `txHash` | `src/verify/verifier.ts` | 出错或被攻破的 facilitator 返回伪造 txHash，验证照样报 `verified` | ✅ 已修（P0-7） |
+| **D8** | **收据排序不确定**：`listReceipts` 按 `created_at ASC, id ASC` 排序，同毫秒时次级排序回退到**内容哈希** `id`，与追加顺序无关 | `src/store/db.ts` | 旗舰的离线验证会间歇性误报 `tampered`（实测 12 次里 7 次）；且 epoch 根依赖该顺序 → **锚定不可复现** | ✅ 已修（P0-8，方案 A：`seq` 列 + 迁移） |
+
+> 📌 **D1–D5、D7、D8 的完成意味着**：截至 2026-09-17，Ledgeroot 的密码学实现**已与最强的对手（Traceipt）打平**。剩下的是商业债而非技术债——见 §2.4。
 
 ### 2.3 未开始
 
@@ -66,6 +70,22 @@
 - ERC-8004 接入（`Mandate.agentId` 字段已埋，未接注册表）
 - 收据规范发布
 - 可复现基准
+
+### 2.4 ❗ 新增差距（2026-09-17 竞品复核）—— 技术债已清，剩商业债
+
+P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。它们不是密码学问题，而是"能不能交付给企业"的问题：
+
+| # | 差距 | 谁有 | 现状 | 为什么重要 |
+|---|---|---|---|---|
+| N1 | **RFC 3161 合格时间戳** | Vaultra（Sectigo eIDAS QTSP，eIDAS Art. 41）、NovaFabric | ❌ 无 | Merkle 锚定证明"这个根在此区块之前存在"，**不等于法定时间戳**；EU 监管语境下 eIDAS QTSP 的戳有独立法律地位 |
+| N2 | **人类可读交付物**（VAT 合规 PDF / 审计报告） | Traceipt（VAT PDF + 扫码验证）、Vaultra（auditor-ready PDF + 公开验证 URL） | ❌ 无 | 机器可验 ≠ 会计可归档。这是进财务/审计流程的门票，也是 commercialization.md §三"合规交付物"那一层最先被问到的东西 |
+| N3 | **主网** | Traceipt / Black_Wall（Base 主网）、EVIDIQ（0G + X Layer 主网） | ❌ Monad **测试网** | 测试网上的锚定不能作为任何真实审计的凭据 |
+| N4 | **跨语言规范化变体** | Traceipt（键按 Unicode 码点排序 + 支持 Python `ensure_ascii` 变体） | ⚠️ 用 `canonicalize` 包，未处理变体 | 第三方用别的语言实现验证器时会对不上 |
+| N5 | **后量子签名** | Traceipt（混合 ML-DSA-65 双签） | ❌ 无 | 长期档案韧性；对手已领先 |
+
+> 📌 **N2 与 N1 应优先于 P1–P3 的其他项**——它们是 `commercialization.md` §四"卖唯一能证明完整性的审计报告"能否成立的前提。**证明得再严谨，如果审计师拿不到一份能归档的东西，商业层就是空的。**
+>
+> 📌 **N3 是信誉问题**：`threat-landscape.md` §C1 已记录 Traceipt 用真实 Base 区块作验证示例。测试网锚定在对外沟通时会被当作"还没上生产"。
 
 ---
 
