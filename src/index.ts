@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./env.js";
 export * from "./mandate.js";
 export * from "./decimal.js";
 export * from "./chains.js";

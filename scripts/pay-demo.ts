@@ -1,7 +1,10 @@
+import { loadEnv } from "../src/env.js";
 import { createServices } from "../src/bootstrap.js";
 import { signMandate } from "../src/mandate.js";
 import { handlePay } from "../src/tools/pay.js";
 import type { Mandate } from "../src/types.js";
+
+loadEnv();
 
 const payTo = process.argv[2] ?? process.env.LEDGEROOT_DEMO_PAYTO;
 const amount = process.argv[3] ?? "0.001";

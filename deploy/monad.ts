@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 import { createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { pathToFileURL } from "node:url";
+import { loadEnv } from "../src/env.js";
 import { DEFAULT_RPC_URL, monadTestnet } from "../src/chains.js";
 import { anchorAbi } from "../src/anchor/anchorer.js";
+
+loadEnv();
 
 /** Monad testnet deployment configuration. */
 export const monad = {

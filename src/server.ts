@@ -1,7 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { loadEnv } from "./env.js";
 import { createServices } from "./bootstrap.js";
 import { createToolRouter } from "./tools/registry.js";
+
+loadEnv();
 
 const services = createServices();
 const server = new McpServer({ name: "ledgeroot", version: "0.1.0" });

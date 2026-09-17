@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import type { Hex } from "viem";
 import { LedgerootStore } from "./store/db.js";
 import { PolicyEngine } from "./policy/engine.js";
@@ -11,13 +10,6 @@ import {
 import { Anchorer } from "./anchor/anchorer.js";
 import { DEFAULT_RPC_URL, monadTestnet } from "./chains.js";
 import type { LedgerootServices } from "./context.js";
-
-// Load `.env` from the current working directory (Node 20.12+). Node does not
-// read `.env` automatically, so every entry point (MCP server, CLI, scripts)
-// loads it here before `createServices` reads process.env. No-op if absent.
-if (existsSync(".env")) {
-  process.loadEnvFile();
-}
 
 export interface BootstrapOptions {
   dbPath?: string;

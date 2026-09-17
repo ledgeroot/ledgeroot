@@ -1,6 +1,9 @@
 #!/usr/bin/env node
+import { loadEnv } from "./env.js";
 import { createServices } from "./bootstrap.js";
 import { anchor, exportEvidence, verify } from "./tools/receipts.js";
+
+loadEnv();
 
 const [, , command, ...args] = process.argv;
 
