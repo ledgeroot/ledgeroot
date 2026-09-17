@@ -59,6 +59,25 @@ export interface ReceiptSegments {
 
 export type ReceiptStatus = "paid" | "denied";
 
+/** A detached Ed25519 signature over a receipt hash. */
+export interface ReceiptSignature {
+  protected: {
+    alg: "EdDSA";
+    /** Key id — the public key's RFC 7638 thumbprint. */
+    kid: string;
+    typ: string;
+  };
+  /** base64url signature over the canonical `{ payload, protected }` bytes. */
+  value: string;
+}
+
+/** A verifier's view of a signing key. Carries no secret material. */
+export interface PublicKey {
+  kid: string;
+  /** Raw 32-byte Ed25519 public key, base64url. */
+  x: string;
+}
+
 export interface Receipt {
   schema: "ledgeroot.receipt.v1";
   /** Stable receipt id — canonical hash of the receipt content. */
@@ -83,4 +102,10 @@ export interface Receipt {
   prevHash?: string;
   /** Canonical RFC-8785 hash of this receipt (self hash). */
   receiptHash: string;
+  /**
+   * Detached signature over `receiptHash` by the issuer's signing key. Absent
+   * on receipts recorded before a signing key was configured, and excluded
+   * from `receiptHash` itself.
+   */
+  signature?: ReceiptSignature;
 }

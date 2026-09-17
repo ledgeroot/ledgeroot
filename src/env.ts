@@ -26,3 +26,13 @@ export function isDryRun(): boolean {
 export function getPrivateKey(): string | undefined {
   return process.env.LEDGEROOT_PRIVATE_KEY ?? (isDryRun() ? DRY_RUN_PRIVATE_KEY : undefined);
 }
+
+/**
+ * The receipt signing key. Deliberately separate from the payment key: the
+ * payment key authorizes funds, this one attests to what happened, and neither
+ * should be usable for the other's job. Falls back to the throwaway key in
+ * dry-run so demos stay self-contained.
+ */
+export function getSigningKey(): string | undefined {
+  return process.env.LEDGEROOT_SIGNING_KEY ?? (isDryRun() ? DRY_RUN_PRIVATE_KEY : undefined);
+}

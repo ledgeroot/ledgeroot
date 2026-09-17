@@ -1,10 +1,11 @@
 import { rmSync } from "node:fs";
-import { afterEach, describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
 import { anchor, verify } from "../src/tools/receipts.js";
 import { buildReceipt } from "../src/receipt/builder.js";
 import { epochRoot } from "../src/anchor/anchorer.js";
 import { verifyAnchor } from "../src/verify/verifier.js";
+import { TEST_KEY, sign } from "./support.js";
 import type { LedgerootServices } from "../src/context.js";
 import type { ReceiptSegments } from "../src/types.js";
 
@@ -28,12 +29,13 @@ function fakeAnchorer(txHash = "0xfaketx") {
   };
 }
 
-/** A denied receipt, so it carries no tx hash and never reads as incomplete. */
+/** A signed, denied receipt — no tx hash, so it never reads as incomplete. */
 function denied(reason: string, prevHash?: string) {
-  return buildReceipt({ status: "denied", reason, segments: segments(), prevHash });
+  return sign(buildReceipt({ status: "denied", reason, segments: segments(), prevHash }));
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const suffix of ["", "-wal", "-shm"]) {
     rmSync(DB + suffix, { force: true });
   }
@@ -83,6 +85,8 @@ describe("anchor flow", () => {
   });
 
   it("stays verified when a receipt is appended after anchoring", async () => {
+    // verify() checks attribution against the local signer's own key.
+    vi.stubEnv("LEDGEROOT_SIGNING_KEY", TEST_KEY);
     const store = new LedgerootStore({ path: DB });
     const a = denied("anchored");
     store.appendReceipt(a);

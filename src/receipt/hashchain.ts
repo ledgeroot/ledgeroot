@@ -2,15 +2,21 @@ import { createHash } from "node:crypto";
 import canonicalize from "canonicalize";
 
 /**
- * Canonical JSON (RFC 8785) hash of a value, returned as lowercase hex.
- * This is the single hashing primitive the whole evidence chain is built on.
+ * Canonical JSON (RFC 8785) serialisation of a value. This is the byte-level
+ * form everything in the evidence chain is built on — hashed for the chain,
+ * and signed for receipts.
  */
-export function canonicalHash(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   const json = canonicalize(value);
   if (json === undefined) {
     throw new Error("value is not canonicalizable per RFC 8785");
   }
-  return createHash("sha256").update(json).digest("hex");
+  return json;
+}
+
+/** Canonical JSON (RFC 8785) hash of a value, returned as lowercase hex. */
+export function canonicalHash(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
 /**

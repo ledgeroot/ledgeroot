@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loadEnv } from "./env.js";
 import { createServices } from "./bootstrap.js";
-import { anchor, exportEvidence, verify, verifyOnChain } from "./tools/receipts.js";
+import { anchor, exportEvidence, keySet, verify, verifyOnChain } from "./tools/receipts.js";
 import { serveMCP } from "./mcp.js";
 
 loadEnv();
@@ -21,12 +21,18 @@ Usage:
                                    --check-chain also confirms each settlement via RPC
   ledgeroot export [--db <path>]   Export the evidence bundle as JSON
   ledgeroot anchor [--db <path>]   Submit the epoch Merkle root on-chain
+  ledgeroot jwks                   Print the JWKS a third party needs to verify receipts
   ledgeroot serve                  Start the MCP server over stdio
 `;
 
 async function main(): Promise<void> {
   if (command === "serve") {
     await serveMCP();
+    return;
+  }
+
+  if (command === "jwks") {
+    console.log(JSON.stringify(keySet(), null, 2));
     return;
   }
 

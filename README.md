@@ -29,6 +29,7 @@ Ledgeroot 的三层架构与 MAS SAFR 白皮书的三个运行时保障功能一
 `意图 → 授权 → 计划 → 调用 → 交易哈希 → 交付凭证`
 
 - 段间由 RFC 8785 哈希链互锁（每张收据回指上一张的 `receiptHash`）
+- **每张收据带 Ed25519 detached 签名**：JWS 式 `protected` 头，签名覆盖 `{payload, protected}`，因此 `alg` / `kid` 落在被签字节内不可替换；公钥以 JWKS 发布（`npx ledgeroot jwks`），第三方无需连回即可验签。哈希链证"内容没被改"，签名证"谁做的陈述"
 - epoch Merkle 根由 25 行锚定合约提交上链；锚定记录该根覆盖的收据数，因此之后新增支付不会让校验误报
 - 第六段只在调用方回报响应体时写入（`ledgeroot_pay` 的 `responseBody`），只存哈希与字节数，不存原文
 - `npx ledgeroot verify` 离线三态验证（`verified / tampered / incomplete`），不经过任何服务器
@@ -89,6 +90,7 @@ node dist/cli.js serve
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC（默认 `https://testnet-rpc.monad.xyz`） |
 | `LEDGEROOT_ANCHOR_ADDRESS` | 锚定合约地址（未设置则锚定离线） |
 | `LEDGEROOT_PRIVATE_KEY` | 支付 + 锚定签名私钥（永不出本机） |
+| `LEDGEROOT_SIGNING_KEY` | 收据签名密钥（32 字节 hex 种子）。**与支付密钥分离**——支付密钥动钱，这把只做陈述。**未设置则收据不签名，验证会报 `incomplete`** |
 | `LEDGEROOT_DRY_RUN` | 设为 `true` 启用仿真：零钱包零 USDC 跑全流程（假 tx + 一次性私钥） |
 
 ## 在 Claude Code 中使用

@@ -1,5 +1,6 @@
-import type { Receipt } from "../types.js";
+import type { PublicKey, Receipt } from "../types.js";
 import { recomputeReceiptHash } from "../receipt/builder.js";
+import { RECEIPT_ALG, verifyReceiptSignature } from "../receipt/signing.js";
 import { merkleRoot } from "../anchor/merkle.js";
 
 export type VerificationStatus = "verified" | "tampered" | "incomplete";
@@ -46,11 +47,39 @@ function verifySettlement(receipt: Receipt): Issue[] {
 }
 
 /**
+ * Check who attested the receipt. An unsigned receipt, or one whose key the
+ * verifier does not hold, is missing evidence rather than a mismatch; a
+ * signature that was checked and failed is a mismatch.
+ */
+function verifyAttribution(receipt: Receipt, keys: PublicKey[]): Issue[] {
+  const signature = receipt.signature;
+  if (!signature) {
+    return [incomplete(`receipt ${receipt.id}: unsigned`)];
+  }
+  const key = keys.find((candidate) => candidate.kid === signature.protected.kid);
+  if (!key) {
+    return [incomplete(`receipt ${receipt.id}: no public key for kid ${signature.protected.kid}`)];
+  }
+  if (signature.protected.alg !== RECEIPT_ALG) {
+    return [tampered(`receipt ${receipt.id}: unsupported signature algorithm "${signature.protected.alg}"`)];
+  }
+  if (!verifyReceiptSignature(receipt.receiptHash, signature, key)) {
+    return [tampered(`receipt ${receipt.id}: signature does not verify`)];
+  }
+  return [];
+}
+
+/**
  * Verify a single receipt's internal consistency. Does not require the
  * surrounding chain, so an individual exported receipt can be checked alone.
+ * Pass the issuer's public keys to also check attribution.
  */
-export function verifyReceipt(receipt: Receipt): VerificationResult {
-  return result([...verifyReceiptSelf(receipt), ...verifySettlement(receipt)]);
+export function verifyReceipt(receipt: Receipt, keys: PublicKey[] = []): VerificationResult {
+  return result([
+    ...verifyReceiptSelf(receipt),
+    ...verifySettlement(receipt),
+    ...verifyAttribution(receipt, keys),
+  ]);
 }
 
 /**
@@ -59,11 +88,19 @@ export function verifyReceipt(receipt: Receipt): VerificationResult {
  *  - each receipt's back-pointer names the previous one (tampered otherwise)
  *  - the first receipt points nowhere (tampered otherwise)
  *  - paid receipts carry a tx hash (incomplete otherwise)
+ *  - every receipt is signed by a key the verifier holds (see verifyAttribution)
  */
-export function verifyReceiptChain(receipts: Receipt[]): VerificationResult {
+export function verifyReceiptChain(
+  receipts: Receipt[],
+  keys: PublicKey[] = [],
+): VerificationResult {
   const issues: Issue[] = [];
   receipts.forEach((receipt, index) => {
-    issues.push(...verifyReceiptSelf(receipt), ...verifySettlement(receipt));
+    issues.push(
+      ...verifyReceiptSelf(receipt),
+      ...verifySettlement(receipt),
+      ...verifyAttribution(receipt, keys),
+    );
     if (index === 0) {
       if (receipt.prevHash) {
         issues.push(tampered(`receipt ${receipt.id}: first receipt should not have a prevHash`));

@@ -4,6 +4,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
 import { buildReceipt } from "../src/receipt/builder.js";
 import { verifyAnchor, verifyReceiptChain } from "../src/verify/verifier.js";
+import { TEST_PUBLIC_KEY, sign } from "./support.js";
 import type { Receipt, ReceiptSegments } from "../src/types.js";
 
 const DB = "/tmp/cc-store-test.sqlite";
@@ -20,19 +21,21 @@ function segments(): ReceiptSegments {
   };
 }
 
-/** A hash-chained run of receipts, all built within the same millisecond. */
+/** A signed, hash-chained run of receipts built within one millisecond. */
 function chained(count: number, timestamp: number): Receipt[] {
   const clock = vi.spyOn(Date, "now").mockReturnValue(timestamp);
   try {
     const out: Receipt[] = [];
     for (let i = 0; i < count; i++) {
       out.push(
-        buildReceipt({
-          status: "denied",
-          reason: `receipt ${i}`,
-          segments: segments(),
-          prevHash: out.at(-1)?.receiptHash,
-        }),
+        sign(
+          buildReceipt({
+            status: "denied",
+            reason: `receipt ${i}`,
+            segments: segments(),
+            prevHash: out.at(-1)?.receiptHash,
+          }),
+        ),
       );
     }
     return out;
@@ -69,7 +72,7 @@ describe("receipt ordering", () => {
     const store = new LedgerootStore({ path: DB });
     for (const receipt of chained(6, 1_000)) store.appendReceipt(receipt);
 
-    expect(verifyReceiptChain(store.listReceipts())).toMatchObject({
+    expect(verifyReceiptChain(store.listReceipts(), [TEST_PUBLIC_KEY])).toMatchObject({
       status: "verified",
       issues: [],
     });

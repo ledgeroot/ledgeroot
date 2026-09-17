@@ -2,8 +2,10 @@ import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import { buildReceipt } from "../receipt/builder.js";
 import { contentHash } from "../receipt/hashchain.js";
+import { signReceipt } from "../receipt/signing.js";
+import { getSigningKey } from "../env.js";
 import { add } from "../decimal.js";
-import type { ReceiptSegments } from "../types.js";
+import type { Receipt, ReceiptSegments } from "../types.js";
 import type { X402Quote } from "../x402/facilitator.js";
 import { computePolicyIntersection } from "../mandate.js";
 
@@ -76,6 +78,18 @@ function buildSegments(
 }
 
 /**
+ * Record a receipt, signed when a signing key is configured. The signature
+ * covers the receipt hash rather than the receipt, so it can be attached after
+ * the hash is computed without changing it — and so the hash chain, the epoch
+ * Merkle root and the signature all commit to the same value.
+ */
+function record(services: LedgerootServices, receipt: Receipt): void {
+  const key = getSigningKey();
+  const signed = key ? { ...receipt, signature: signReceipt(receipt.receiptHash, key) } : receipt;
+  services.store.appendReceipt(signed);
+}
+
+/**
  * The core payment flow: resolve the mandate, evaluate every policy
  * (fail-closed), then either settle the x402 payment or record a denial.
  * Both outcomes produce a six-segment audit receipt.
@@ -116,7 +130,7 @@ export async function handlePay(
       segments: buildSegments(input, [], "", []),
       prevHash,
     });
-    services.store.appendReceipt(receipt);
+    record(services, receipt);
     return { status: "denied", receiptId: receipt.id, reason };
   }
 
@@ -140,7 +154,7 @@ export async function handlePay(
       segments: buildSegments(input, [], mandate.issuer, policyIntersection),
       prevHash,
     });
-    services.store.appendReceipt(receipt);
+    record(services, receipt);
     return { status: "denied", receiptId: receipt.id, reason };
   }
 
@@ -176,7 +190,7 @@ export async function handlePay(
       segments: buildSegments(input, policyResults, mandate.issuer, policyIntersection),
       prevHash,
     });
-    services.store.appendReceipt(receipt);
+    record(services, receipt);
     return { status: "denied", receiptId: receipt.id, reason };
   }
 
@@ -210,6 +224,6 @@ export async function handlePay(
     segments,
     prevHash,
   });
-  services.store.appendReceipt(receipt);
+  record(services, receipt);
   return { status: "paid", receiptId: receipt.id, txHash: payment.txHash };
 }

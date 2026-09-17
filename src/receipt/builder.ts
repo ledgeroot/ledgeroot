@@ -40,8 +40,8 @@ export function buildReceipt(input: ReceiptInput): Receipt {
   return { ...content, id, receiptHash: id };
 }
 
-/** Recompute a receipt's canonical hash, ignoring its stored id/receiptHash. */
+/** Recompute a receipt's canonical hash, ignoring its stored id/hash/signature. */
 export function recomputeReceiptHash(receipt: Receipt): string {
-  const { id: _id, receiptHash: _receiptHash, ...content } = receipt;
+  const { id: _id, receiptHash: _receiptHash, signature: _signature, ...content } = receipt;
   return canonicalHash(content);
 }

@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
-import type { Receipt } from "../types.js";
+import type { PublicKey, Receipt } from "../types.js";
 import { epochRoot } from "../anchor/anchorer.js";
 import { DEFAULT_RPC_URL } from "../chains.js";
+import { getSigningKey } from "../env.js";
+import { jwksOf, publicKeyOf } from "../receipt/signing.js";
 import { checkSettlements, createSettlementReader } from "../verify/onchain.js";
 import { classify, verifyAnchor, verifyReceiptChain } from "../verify/verifier.js";
 
@@ -41,6 +43,22 @@ export function getReceipt(services: LedgerootServices, input: ReceiptGetInput) 
 }
 
 /**
+ * The public identities this machine can check receipts against. The local
+ * verifier trusts the key it signs with; a third party gets the same keys in
+ * the exported bundle.
+ */
+export function issuerKeys(): PublicKey[] {
+  const key = getSigningKey();
+  return key ? [publicKeyOf(key)] : [];
+}
+
+/** The JWKS a third party needs to verify this operator's receipts offline. */
+export function keySet(): { keys: Array<Record<string, string>> } {
+  const key = getSigningKey();
+  return key ? jwksOf(key) : { keys: [] };
+}
+
+/**
  * Verify the whole ledger: the receipt chain, plus the anchor it commits to
  * when one exists. The anchor is checked against the epoch it actually covers
  * rather than the whole ledger, so receipts appended afterwards do not read as
@@ -51,7 +69,10 @@ function verifyLedger(services: LedgerootServices, receipts: Receipt[]) {
   const anchorResult = anchor
     ? verifyAnchor(receipts, anchor.root, anchor.receiptCount)
     : null;
-  const issues = [...verifyReceiptChain(receipts).issues, ...(anchorResult?.issues ?? [])];
+  const issues = [
+    ...verifyReceiptChain(receipts, issuerKeys()).issues,
+    ...(anchorResult?.issues ?? []),
+  ];
   return { anchor, anchorResult, status: classify(issues), issues };
 }
 
@@ -117,6 +138,8 @@ export function exportEvidence(services: LedgerootServices) {
       exportedAt: new Date().toISOString(),
       root,
       anchor,
+      // Carried so a third party can check attribution with no call home.
+      keys: issuerKeys(),
       receipts,
       verification: { status, issues },
     },

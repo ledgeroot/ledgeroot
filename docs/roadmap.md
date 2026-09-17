@@ -138,6 +138,15 @@
 
 ### P0-2. 收据补签名
 
+> ✅ **已完成（2026-09-17）**。
+> 实现：新增 `src/receipt/signing.ts`，用 `node:crypto` 的 Ed25519（零依赖；实测 WebCrypto 在该环境不可用）。
+> **签的是 `receiptHash` 而不是收据本身**——因为哈希链、epoch Merkle 根、签名三者因此提交到同一个值，一处承诺贯穿全线。签名覆盖 `canonicalJson({ payload: { receiptHash }, protected })`，`alg`/`kid` 落在被签字节内。
+> `kid` 用 **RFC 7638 JWK thumbprint**（`base64url(sha256({"crv":"Ed25519","kty":"OKP","x":...}))`）——标识由密钥本身派生，无需注册表也不会与密钥漂移。
+> 密钥边界（原 Q2）：新增 **`LEDGEROOT_SIGNING_KEY`**，**刻意不回落**到 `LEDGEROOT_PRIVATE_KEY`——支付密钥动钱，签名密钥只做陈述，互不兼任。dry-run 下回落到一次性密钥以保持演示自洽。
+> 验证语义：未签名 / 验证方不持有该 `kid` → `incomplete`；签名不符或 `alg` 非 `EdDSA` → `tampered`。
+> 发布面：`ledgeroot jwks` 导出 JWKS；`exportEvidence` 的证据包内附 `keys`，第三方无需连回即可验签。
+> 验证：新增 `test/signing.test.ts`（9 个用例）与 `test/receipt.test.ts` 的归因组（4 个用例），含**"内容被改并重新哈希后链校验通过、只有签名能发现"**这一关键用例。78 个测试全过。
+
 - **为什么**：D2 是"证据引擎"最根本的缺口。没有签名，收据只证完整性不证来源。
 - **做什么**：
   - 采用与业界一致的封装：JWS 式 `{ protected: { alg: "EdDSA", kid, typ }, payload, signature }`
@@ -147,6 +156,7 @@
 - **涉及**：`src/types.ts`、`src/receipt/builder.ts`、新增 `src/receipt/signing.ts`、`test/receipt.test.ts`
 - **验收**：篡改任一字段 → 验签失败；替换 `alg` 或 `kid` → 验签失败
 - **参考实现**：Traceipt `src/index.mjs` 的 `verifyEnvelope`
+- ⚠️ **行为变化（非破坏性 API，但是可见变化）**：未配置 `LEDGEROOT_SIGNING_KEY` 时收据不签名，`verify` 会从 `verified` 变为 `incomplete`。这是刻意的——无法归因的证据不该报 `verified`。
 
 ### P0-3. 修 `classify()`，让 `incomplete` 真正可达
 
@@ -391,7 +401,7 @@
 | # | 决策 | 影响 | 状态 |
 |---|---|---|---|
 | **Q1** | **P0-1 的 Merkle 变更是破坏性的 —— 是否保留向后兼容？** | 决定是否需要收据 schema 版本升级与迁移路径 | ✅ **已答（2026-09-17）：采用破坏性升级。** 实现见 P0-1。**遗留：版本号决策未定 —— 破坏性变更按 semver 应升到 `0.2.0`（当前 `0.1.2`），且 MandateKey 依赖 `ledgeroot@^0.1.2`，需同步** |
-| **Q2** | 签名密钥与锚定密钥是否分离？ | 安全边界设计 | 待定 |
+| **Q2** | 签名密钥与锚定密钥是否分离？ | 安全边界设计 | ✅ **部分已答（2026-09-17）**：P0-2 新增独立的 `LEDGEROOT_SIGNING_KEY` 用于收据签名，且**不回落**到支付密钥。**锚定密钥是否也独立，留待 P0-6 一并定** |
 | **Q3** | 独立验证器包放本仓库 monorepo 还是独立仓库？ | 分发与版本节奏 | 待定 |
 | **Q4** | facilitator 多路化的目标链优先级？（Base / Solana / BNB） | 工作量与生态契合度 | 待定 |
 | **Q5** | 支柱 1 的对外表述最终定稿？ | 全部文案 | 待定 |
