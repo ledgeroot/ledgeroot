@@ -4,7 +4,26 @@
 > 依据文档：[commercialization.md](./commercialization.md) · [architecture-gaps.md](./architecture-gaps.md) · [standards-landscape.md](./standards-landscape.md) · [threat-landscape.md](./threat-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)
 > 适用范围：Ledgeroot（engine）+ MandateKey（dashboard）
 > 排序原则：**先正确性，再差异化，再可见性，最后公信力** —— 前者是后者的前提
-> 商业化定位：**开源内核 + 企业控制面 + 合规交付物**；本期不启动商业化，只做架构留缝
+> 商业化定位：**开源内核 + 企业控制面 + 对账与聚合层**；本期不启动商业化，只做架构留缝
+
+---
+
+## 零、当前阶段：Monad 黑客松（2026-09-17 新增）
+
+> ⚠️ **这是眼下的第一优先级，其余各节在此阶段从属于它。**
+
+**目标**：跑通一个**完整的 loop** 让评委看懂——**agent 在 Monad 上通过 x402 支付 → 生成收据 → 锚定 → 离线验证**。
+
+**阶段内该优化的**：演示的完整性与可信度（"钱真的动了、记录真的能独立验"），不是装机量，也不是百万笔性能。
+
+| 阶段内的取舍 | 说明 |
+|---|---|
+| ✅ **A1 提前到第 0 位** | 收据先于结算写入。**唯一会在现场现形的 bug**——demo 连续快跑时正好放大这个窗口，崩一次就是"钱扣了没收据" |
+| ✅ **D1b（链改配置化）** | 成本低（`FacilitatorNetworkConfig` 类型已就绪），且让测试网 → 主网变成改配置 |
+| ⏸ **B 类整组（规模问题）** | 索引、批量、分区、聚合——**黑客松后**。见 [architecture-gaps.md](./architecture-gaps.md) §二 |
+| ⏸ **N 系列（竞品对齐项）** | RFC 3161、held-set completeness、单文件验证器——**黑客松后** |
+
+> 📌 **为什么选 Monad 不是凑数**：Monad 的定位是高吞吐 + 低费用，而 **agent 小额支付正是唯一真正需要那个吞吐量的工作负载**（每秒数百笔 $0.005，在吞吐与费率不够的链上光 gas 就不可行）。**它和 §一 第 0 条的生态位本来就对齐。** 详见 [architecture-gaps.md](./architecture-gaps.md) §D1a。
 
 ---
 
@@ -91,7 +110,7 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 |---|---|---|---|---|
 | N1 | **RFC 3161 合格时间戳** | Vaultra（Sectigo eIDAS QTSP，eIDAS Art. 41）、NovaFabric | ❌ 无 | Merkle 锚定证明"这个根在此区块之前存在"，**不等于法定时间戳**；EU 监管语境下 eIDAS QTSP 的戳有独立法律地位 |
 | N2 | **人类可读交付物**（VAT 合规 PDF / 审计报告） | Traceipt（VAT PDF + 扫码验证）、Vaultra（auditor-ready PDF + 公开验证 URL） | ❌ 无 | 机器可验 ≠ 会计可归档。这是进财务/审计流程的门票，也是 commercialization.md §三"合规交付物"那一层最先被问到的东西 |
-| N3 | **主网** | Traceipt / Black_Wall（Base 主网）、EVIDIQ（0G + X Layer 主网） | ❌ Monad **测试网** | 测试网上的锚定不能作为任何真实审计的凭据 |
+| N3 | **主网**（⚠️ 2026-09-17 修订，见下） | Traceipt / Black_Wall（Base 主网）、EVIDIQ（0G + X Layer 主网） | ❌ Monad **测试网**——**但这是刻意的**（Monad 黑客松） | 测试网上的锚定不能作为真实审计的凭据；**黑客松期间不需要** |
 | N4 | **跨语言规范化变体** | Traceipt（键按 Unicode 码点排序 + 支持 Python `ensure_ascii` 变体） | ⚠️ 用 `canonicalize` 包，未处理变体 | 第三方用别的语言实现验证器时会对不上 |
 | N5 | **后量子签名** | Traceipt（混合 ML-DSA-65 双签）；**Vaara 也把 ML-DSA-65 列为 MAY** | ❌ 无 | 长期档案韧性；对手已领先 |
 | N6 ❗ | **held-set completeness（逐条 runningCount + 封存记录）** | **Vaara Receipt §6.4** | ⚠️ 只有逐 epoch 的 Merkle 根，无逐条计数、无封存语义、无缺口最坏情况 | **原支柱 2 已被占**；现在的差距是工程粒度而非概念 |
@@ -106,7 +125,9 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 >
 > 📌 **N1/N8 应优先于 P1–P3 的其他项**——它们是 `commercialization.md` §四"卖审计报告"能否成立的前提。**证明得再严谨，如果审计师拿不到一份能归档、能用 eIDAS 时间戳定时的东西，商业层就是空的。**
 
-> 📌 **N3 是信誉问题**：`threat-landscape.md` §C1 已记录 Traceipt 用真实 Base 区块作验证示例。测试网锚定在对外沟通时会被当作"还没上生产"。
+> 📌 **N3 的修订（2026-09-17）**：原先把"Monad 测试网"整体写成差距。**选了 Monad 是刻意的**（配合 Monad 黑客松），而且与该链的高吞吐定位对齐——**agent 小额支付正是唯一真正需要那个吞吐量的工作负载**。真正的技术债只有"链是硬编码的"这一条，见 [architecture-gaps.md](./architecture-gaps.md) §D1。
+>
+> 测试网锚定确实不产生证据价值（区块时间不是外部权威），但**黑客松期间不需要解决**。主网或在 RFC 3161 那一档（N1/N8）是黑客松之后的事。
 >
 > 📌 **N6–N9 的紧迫性来自标准侧而非产品侧**：Vaara 的草案 4 天内从 `-08` 走到 `-10`，并已在 §11 点名四篇独立收敛的工作。**它的 profile 注册表是开放的接入点，但窗口不会一直开着。**
 

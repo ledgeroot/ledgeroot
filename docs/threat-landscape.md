@@ -309,7 +309,7 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 
 **它比 Ledgeroot 强的地方（要认）**
 
-1. **已在 Base 上跑锚定**（验证器示例为真实区块），Ledgeroot 仍在 Monad **测试网**。
+1. **已在 Base 上跑锚定**（验证器示例为真实区块），Ledgeroot 仍在 Monad **测试网**——⚠️ **但测试网是刻意选择**（Monad 黑客松，且与该链的高吞吐定位对齐），见 [architecture-gaps.md](./architecture-gaps.md) §D1
 2. **VAT 合规 PDF + 扫码验证**——直接进了会计的流程。Ledgeroot 没有任何人类可读的交付物。
 3. **混合 ML-DSA-65 后量子双签**，且验证器如实标注"PQ 层存在但未验证"，不吹牛。
 4. **独立验证器包**（零依赖 npm，退出码约定，`--offline` 开关）。
@@ -328,7 +328,7 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | 拒绝留痕 | ❌ 无 | ✅ 拒付同样出收据 |
 | 人类可读交付物 | ✅ **VAT 合规 PDF + 扫码验证** | ❌ 无 |
 | 独立验证器 | ✅ 独立 npm 包 | ⚠️ 与主库耦合 |
-| 网络状态 | **Base 主网** | Monad **测试网** |
+| 网络状态 | **Base 主网** | Monad **测试网**（⚠️ **刻意选择**，见 [architecture-gaps.md](./architecture-gaps.md) §D1） |
 | 公开基准 | ✅ **有（可复现 + 带签名收据）** | ❌ 无 |
 
 **威胁等级：高**（架构最同构、唯一有真实牵引、密码学已打平、多出 VAT PDF 与公开基准）。**但三根支柱——用户签名授权、非省略证明、证据主权——仍未被覆盖。**
@@ -676,7 +676,7 @@ Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页）§6
 - [ ] 对齐 EU AI Act 第 12 条**高风险**场景（不要泛化到所有 agent；Traceipt 的诚实表述可作范本）
 - [ ] ❗ **新增：RFC 3161 合格时间戳**（Vaultra 用 Sectigo eIDAS QTSP，NovaFabric 亦已实现）—— Merkle 锚定不等于法定时间戳，这是 EU 合规场景的独立法律凭据
 - [ ] ❗ **新增：人类可读交付物**（VAT 合规 PDF / 审计报告）—— Traceipt 与 Vaultra 都已交付；这是进会计与审计流程的门票，也是 `commercialization.md` §三"合规交付物"那一层的最先被问到的东西
-- [ ] ❗ **新增：主网**（对手 Traceipt/Black_Wall 在 Base 主网、EVIDIQ 在 0G + X Layer 主网，Ledgeroot 仍在 Monad 测试网）
+- [ ] ❗ **新增：主网**（对手 Traceipt/Black_Wall 在 Base 主网、EVIDIQ 在 0G + X Layer 主网）—— ⚠️ **2026-09-17 修订：当前在 Monad 测试网是刻意选择**（Monad 黑客松），且与该链的高吞吐定位对齐；**黑客松后再做**。真正的技术债是"链硬编码、换不了"，见 [architecture-gaps.md](./architecture-gaps.md) §D1
 
 ---
 

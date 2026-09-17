@@ -107,7 +107,7 @@
 | 供应链 | ✅ SLSA L3 + Sigstore + fuzzing + OpenSSF | ❌ |
 | 许可 | **AGPL-3.0**（+ 商业许可） | **MIT** |
 | 牵引 | **≈2,164/周** | 0 |
-| 主网 | N/A（不发链上） | Monad **测试网** |
+| 主网 | N/A（**不发链上**，用 RFC 3161 / eIDAS + 透明日志） | Monad **测试网**（⚠️ **刻意选择**：Monad 黑客松，且与该链高吞吐定位对齐；见 [architecture-gaps.md](./architecture-gaps.md) §D1） |
 
 **读法**：这张表里 Ledgeroot 占优的行只有四行——**支付语义、报价漂移/payTo、累计限额、凭据由用户自签**。其余要么打平，要么落后。
 

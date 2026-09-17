@@ -25,11 +25,12 @@
 
 **结论变化**：本文档 §二 的逐维度对比表与 §四 的"落后之处"清单**不再准确**，请以 [threat-landscape.md](./threat-landscape.md) §C1 的"状态修正"表为准（该表同时纳入了 Traceipt 的 `traceipt-verify` 一手自述）。
 
-**另外三处需要知道的新情况**：
+**另外四处需要知道的新情况**：
 
 1. **"TrustBench"是四家同名产品**，本文档只分析了其中一家（`trustbench.io`），而且是四家里最弱的一家。另有 `trustbench.net`（AI 输出质量评估 SaaS，$249/mo）、`trustmodel.ai/trustbench`（企业评估引擎）与 **arXiv 2603.09157**（ASU + UCLA 的"执行前实时信任验证"框架）。详见 threat-landscape.md §C3。
 2. **Traceipt（BlueTier）的密码学实现已被 Ledgeroot 追平**，仍在 PQ 签名、跨语言规范化、独立验证器上领先。详见 threat-landscape.md §C1。
 3. ⚠️ **学术与标准层的威胁大于本文档分析的全部对手**（2026-09-17 第四次修订新增）：**OAP**（arXiv 2603.20953）已占据"执行前确定性授权"，**Vaara Receipt**（`draft-sirkkavaara-vaara-receipt-10`）已占据"非省略证明"且比 Ledgeroot 更完整。**本文档 §六 §七 关于"我们真正没人抄得动的那一组"的判断已部分失效。** 详见 [standards-landscape.md](./standards-landscape.md)。
+4. ⚠️ **"Monad 测试网"不是差距，是刻意选择**（2026-09-17 补记）：本文档 §二、§4.8、§4.11 与附录 B 多处把它列为落后项。**实际是配合 Monad 黑客松的有意选择**，且与该链的高吞吐定位对齐——agent 小额支付正是唯一真正需要那个吞吐量的工作负载。**真正的技术债只有"链硬编码、换不了"这一条。** 详见 [architecture-gaps.md](./architecture-gaps.md) §D1。
 
 ---
 
@@ -215,7 +216,7 @@ TrustBench 是路由器，能看到你请求的每个 capability 和 payer 地�
 | 4.8 | 单链单 facilitator | ⚠️ 硬编码 | ❌ **仍未修** | TrustBench ✅（Base + 登记 Solana） |
 | 4.9 | **RFC 3161 合格时间戳** | — | ❌ **无**（新增项） | Vaultra ✅（Sectigo eIDAS）/ NovaFabric ✅ |
 | 4.10 | **人类可读交付物** | — | ❌ **无**（新增项） | Traceipt ✅（VAT PDF）/ Vaultra ✅（auditor-ready PDF） |
-| 4.11 | **主网** | — | ❌ 仍在 Monad 测试网（新增项） | Traceipt ✅ Base / EVIDIQ ✅ 0G+X Layer |
+| 4.11 | **主网** | — | ⚠️ **刻意选择**：当前在 Monad 测试网是配合 Monad 黑客松，且与该链高吞吐定位对齐（见 [architecture-gaps.md](./architecture-gaps.md) §D1）。**真正的债是"链硬编码换不了"** | Traceipt ✅ Base / EVIDIQ ✅ 0G+X Layer |
 
 <details>
 <summary>已修项的原始源码证据（保留以便追溯）</summary>
