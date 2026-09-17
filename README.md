@@ -24,11 +24,12 @@ Ledgeroot 是「机芯 + 仪表盘」双件结构的**机芯**。仪表盘见 [m
 4. **端点限速** — 每个端点限制调用频率
 5. **限额** — 单笔上限 + 累计上限
 
-## 九个 `ledgeroot_*` 工具
+## 十个 `ledgeroot_*` 工具
 
 | 工具 | 作用 |
 |---|---|
 | `ledgeroot_pay` | 受约束的 x402 支付，出六段收据 |
+| `ledgeroot_mandate_sign` | 本地私钥现场签发授权令 |
 | `ledgeroot_mandate_import` | 导入 AP2 风格授权令 |
 | `ledgeroot_mandate_list` | 列出有效授权 |
 | `ledgeroot_mandate_revoke` | 撤销授权（一键熔断） |
@@ -49,7 +50,7 @@ node dist/cli.js verify
 node dist/cli.js export
 
 # 作为 MCP server 接入宿主（stdio）
-LEDGEROOT_DB=./ledgeroot.sqlite node dist/server.js
+node dist/cli.js serve
 ```
 
 ### 环境变量
@@ -61,6 +62,27 @@ LEDGEROOT_DB=./ledgeroot.sqlite node dist/server.js
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC（默认 `https://testnet-rpc.monad.xyz`） |
 | `LEDGEROOT_ANCHOR_ADDRESS` | 锚定合约地址（未设置则锚定离线） |
 | `LEDGEROOT_PRIVATE_KEY` | 支付 + 锚定签名私钥（永不出本机） |
+
+## 在 Claude Code 中使用
+
+装进 Claude Code 后，agent 获得受约束的支付能力，用户用自然语言管理授权。
+
+```bash
+# 一次性安装（发版后可直接 npx；本地开发用 node 指向 dist/cli.js）
+claude mcp add ledgeroot \
+  --env LEDGEROOT_PRIVATE_KEY=0x你的私钥 \
+  --env LEDGEROOT_DB=/绝对路径/ledgeroot.sqlite \
+  -- npx ledgeroot serve
+```
+
+之后全程对话：
+
+1. **签发授权**：说「给它授权 5 USDC 买 xapi.to 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认 → 授权令签好存库。
+2. **agent 花钱**：说「帮我调研 X，要买付费数据」→ agent 自动 `ledgeroot_pay` → 策略校验 → facilitator 结算 → 六段收据。
+3. **撤销**：说「撤销它的授权」→ `ledgeroot_mandate_revoke`。
+4. **审计**：说「查收据 / 验证证据」→ `ledgeroot_receipt_list` / `ledgeroot_verify`。
+
+> 自然语言解析由宿主（Claude）完成，ledgeroot 只提供结构化、确定性的工具；私钥通过 `--env` 传入，永不出本机。
 
 ## 真实支付演示（Monad testnet）
 
@@ -120,7 +142,7 @@ src/
   store/     SQLite append-only 存储
   wallet/    本地密钥库 / 外部钱包适配
   x402/      facilitator HTTP 集成点
-  tools/     九个 ledgeroot_* MCP 工具
+  tools/     十个 ledgeroot_* MCP 工具
 contracts/   LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/      Monad testnet 部署配置
 ```

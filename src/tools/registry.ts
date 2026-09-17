@@ -3,10 +3,12 @@ import type { LedgerootServices } from "../context.js";
 import { handlePay, payInput } from "./pay.js";
 import {
   importMandate,
+  mandateSign,
   listMandates,
   revokeMandate,
   mandateImportInput,
   mandateRevokeInput,
+  mandateSignInput,
 } from "./mandate.js";
 import {
   listReceipts,
@@ -25,7 +27,7 @@ function text(payload: unknown) {
 }
 
 /**
- * Tool Router — the nine `ledgeroot_*` tools exposed over MCP.
+ * Tool Router — the ten `ledgeroot_*` tools exposed over MCP.
  */
 export function createToolRouter(server: McpServer, services: LedgerootServices): void {
   server.registerTool(
@@ -47,6 +49,17 @@ export function createToolRouter(server: McpServer, services: LedgerootServices)
       inputSchema: mandateImportInput,
     },
     async (args) => text(await importMandate(services, args)),
+  );
+
+  server.registerTool(
+    "ledgeroot_mandate_sign",
+    {
+      title: "Sign mandate",
+      description:
+        "Sign an authorization with the local key and store it. The natural-language summary is shown to the user before signing.",
+      inputSchema: mandateSignInput,
+    },
+    async (args) => text(await mandateSign(services, args)),
   );
 
   server.registerTool(

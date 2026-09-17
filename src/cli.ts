@@ -2,6 +2,7 @@
 import { loadEnv } from "./env.js";
 import { createServices } from "./bootstrap.js";
 import { anchor, exportEvidence, verify } from "./tools/receipts.js";
+import { serveMCP } from "./mcp.js";
 
 loadEnv();
 
@@ -18,9 +19,15 @@ Usage:
   ledgeroot verify [--db <path>]   Offline verification of the receipt chain + anchor
   ledgeroot export [--db <path>]   Export the evidence bundle as JSON
   ledgeroot anchor [--db <path>]   Submit the epoch Merkle root on-chain
+  ledgeroot serve                  Start the MCP server over stdio
 `;
 
 async function main(): Promise<void> {
+  if (command === "serve") {
+    await serveMCP();
+    return;
+  }
+
   const services = createServices({ dbPath: flag("--db") });
   try {
     switch (command) {
