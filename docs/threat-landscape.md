@@ -1,11 +1,12 @@
 # Agent 支付证据层 —— 威胁全景
 
 > 建立日期：2026-09-17
-> 最近修订：2026-09-17（第三次）—— **对照当前源码逐条复核：Ledgeroot 已追平 Traceipt 的密码学实现**（§C1 的旧对比表有 4 项已失效，见"状态修正"）；§C2–C6 补齐 EVIDIQ / TrustBench 同名撞车 / agentstamp / Vaultra 一手情报；新增 §五 D 类的 NovaFabric 与一批 2026 年论文；§七 半衰期、§九 行动清单、§十 监控、附录同步更新
+> 最近修订：2026-09-17（第四次）—— ⚠️ **新增学术与标准层调研（见 [standards-landscape.md](./standards-landscape.md)）：支柱 1 与支柱 2 均已被正式规格化。** OAP（arXiv 2603.20953）占据了"执行前确定性授权"，Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`）占据了"非省略证明"且机制更完整。§五 D1 重写为指向新文档的摘要，§七 半衰期与 §八 支柱、§九 行动清单、§十 监控同步改写
+> 第三次修订：2026-09-17 —— **对照当前源码逐条复核：Ledgeroot 已追平 Traceipt 的密码学实现**（§C1 的旧对比表有 4 项已失效，见"状态修正"）；§C2–C6 补齐 EVIDIQ / TrustBench 同名撞车 / agentstamp / Vaultra 一手情报；新增 §五 D 类的 NovaFabric 与一批 2026 年论文；§七 半衰期、§九 行动清单、§十 监控、附录同步更新
 > 第二次修订：2026-09-17 —— 新增 §三 B2 **卡组织威胁**（Visa TAP / Mastercard Agent Suite / Stripe MPP，与 Coinbase 同类但握有企业客户关系）
 > 前次修订：§四 C1 重写（Traceipt → BlueTier Operations 双产品线）；新增 x402b / Pieverse 情报；半衰期表新增"预行动闸门已被占据"；行动清单新增 RFC 6962 等四项
 > 适用范围：Ledgeroot / MandateKey
-> 关联文档：[roadmap.md](./roadmap.md) · [commercialization.md](./commercialization.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md)
+> 关联文档：[vaara-competitive-analysis.md](./vaara-competitive-analysis.md) · [standards-landscape.md](./standards-landscape.md) · [roadmap.md](./roadmap.md) · [commercialization.md](./commercialization.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md)
 > 调研方法：官网 / 规范原文 / **源码逐行通读** / npm 下载量 / GitHub API / IETF 草案 / 二手信源交叉核对
 
 ---
@@ -18,13 +19,23 @@
 |---|---|---|---|
 | **A. 载波** | PEAC Protocol、x402 Receipt Attestation 草案 | 证据层的**外壳标准**，不碰支付/策略/路由 | **接入，不对抗** |
 | **B. 分发垄断者** | Coinbase（Bazaar / Agentic.Market / CDP）、**卡组织（Visa TAP / Mastercard Agent Suite / Stripe MPP）** | 拥有发现层、轨道层，**且卡组织直接握有企业客户关系** | **被索引，不对抗** |
-| **C. 直接技术竞品** | **BlueTier（Black_Wall + Traceipt）**、EVIDIQ、TrustBench（**同名四家**）、agentstamp、Vaultra | 与 Ledgeroot 在同一能力面竞争 | **正面竞争，靠差异化** |
-| **D. 相邻/间接** | SpendGate、Infopunks、Dexter、PayAI、x402scan… · **新增学术层**（NovaFabric 等，见 §五 D1） | 不同层面，可能互补或挤压 | **监控，按需合作** |
+| **C. 直接技术竞品** | **Vaara（§C7，最强）**、**APort / OAP**、BlueTier（Black_Wall + Traceipt）、EVIDIQ、TrustBench（**同名四家**）、agentstamp | 与 Ledgeroot 在同一能力面竞争 | **正面竞争，靠差异化** |
+| **D. 相邻/间接** | SpendGate、Infopunks、Dexter、PayAI、x402scan… · **学术论文层**（NovaFabric 等，§五 D1） | 不同层面；**论文层几乎无商业威胁，是思路来源** | **监控 / 借鉴，按需合作** |
 | **E. 监管时钟** | EU AI Act 第 12 条 | 定义需求的时间表 | **对齐，但别过度承诺** |
 
-**最重要的判断**：Ledgeroot 的早期差异化能力（收据签名、Merkle 锚定、离线验证）**已经被标准化 —— 而且我们已追平**（2026-09-17 源码复核：RFC 6962 域分隔、Ed25519 签名、三态纪律、链上结算校验、第 6 段交付证明**均已实现**，仅剩锚定权限控制未修）。这三项不再是差异化，不要再拿它们做定位。真正未被任何对手占据的仍是**授权强制（不是存证）**、**完整性证明（非省略）**与**证据主权（本地零外泄）**。
+**最重要的判断**：Ledgeroot 的早期差异化能力（收据签名、Merkle 锚定、离线验证）**已经被标准化 —— 而且我们已追平**（2026-09-17 源码复核：RFC 6962 域分隔、Ed25519 签名、三态纪律、链上结算校验、第 6 段交付证明**均已实现**，仅剩锚定权限控制未修）。这三项不再是差异化，不要再拿它们做定位。
 
-> ✅ **本次修订的核心结论**：Ledgeroot 在密码学实现上**已经追平最强的对手**，因此战略重心应从"补技术债"转向"补商业债"——即 **RFC 3161 合格时间戳**、**人类可读交付物（VAT/审计 PDF）**、**独立验证器包**、**主网**、**公开基准**这五项。这五项是当前与对手之间**真实存在**的差距（详见 §七 与 §九）。
+> ⚠️ **第四次修订更正（两处）**：
+>
+> **(1)** 上面这句原本接着写"真正未被任何对手占据的仍是**授权强制**、**完整性证明**与**证据主权**"。**三项该结论现已全部不成立**——前两项分别被 **OAP / APort**（arXiv 2603.20953）与 **Vaara Receipt** 正式规格化并产品化，**第三项被 Vaara 以 "No SaaS. No telemetry. No signup." 直接占住**。详见 [standards-landscape.md](./standards-landscape.md) 与 [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)。
+>
+> **(2)** 更要紧的是**性质判断错了**：这些不是"学术界的研究"，**是厂商在售产品**。APort 定价 **$499 / $4,990 月费**；Vaara 是 **AGPL 自托管 + 付费 pilot + 商业许可**，**周下载 ≈2,164**（BlueTier 的 20 倍）。**学术论文给你思路，厂商规范抢你的位置——这两件事必须分开看。**
+
+> ✅ **本次修订的核心结论（三段合读）**：
+>
+> 1. **技术债已清完，密码学实现已追平最强对手**；但战略叙事所依赖的三根支柱**在同一年内被产品化的对手收走**。
+> 2. **最强的对手是 Vaara，不是 BlueTier**——它在能力面、牵引、合规包装、可验证性工程四个维度同时压过我们，只剩"支付语义 + 用户自签凭据"两格留给我们。
+> 3. 因此重心必须转向三件事并行：**补商业债**（RFC 3161 / 人类可读交付物 / 独立验证器 / 主网 / 公开基准）、**接入可行的标准**（Vaara profile、OAP policy pack）、以及**重排发布优先级**——对手 5 个月做到 v1.50.0，可见性工程不能再排在最后。详见 §七 与 §九。
 
 ---
 
@@ -219,7 +230,16 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | 真实牵引 | `blackwall-mcp` **111 次/周下载**（v1.4.3）；`traceipt-verify` 3 次/周（v0.1.0） | 高 |
 | 活跃度 | `agent-egress-proxy` 于 **2026-09-16** 仍有提交；26 个公开仓库中 **`traceipt` 主代码库不公开**，仅放出 npm 移植的 `traceipt-verify` | 高 |
 
-> **参照**：TrustBench 验证器周下载 4。**BlueTier 是这一批项目里唯一有真实牵引的。**
+> ⚠️ **第四次修订更正**：此处原写"**BlueTier 是这一批项目里唯一有真实牵引的**"——**该判断错误**。同期数据：
+>
+> | 项目 | 周下载 |
+> |---|---|
+> | **Vaara** | **≈2,164**（PyPI 1,495 + npm 669） |
+> | **APort / OAP** | **614** |
+> | BlueTier `blackwall-mcp` | **111** |
+> | TrustBench `verify-receipt` | **4** |
+>
+> **Vaara 是 BlueTier 的 20 倍。** BlueTier 只是"这一批早期小项目里唯一有牵引的"，不是整个赛道。**Vaara 已单列 §C7。**
 
 #### 产品一：Black_Wall（真正的主体）
 
@@ -409,6 +429,26 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | **Loomal** | Ed25519 签名收据（glossary/产品） | 低 |
 | **minia2a.uk** | 收据绑定 / 过期 / 重放拒绝的研究与实现 | 低（但观点值得读） |
 
+### C7. Vaara —— ⚠️ 目前最接近的对手（第四次修订新增）
+
+> 📄 **完整拆解见 [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)。** 本节只给定性。
+
+| 项 | 内容 |
+|---|---|
+| 主体 | Henri Sirkkavaara，**唯一版权持有人**，单人；付费 pilot 由作者本人承接 |
+| 许可 | **AGPL-3.0-or-later**（v0.70.0 及以前为 Apache-2.0）；闭源嵌入需商业许可；**不接受第三方代码贡献**（为保留再许可能力） |
+| 版本 / 活跃度 | **v1.50.0**；2026-04-20 建仓，**5 个月**；最后提交 2026-09-17 |
+| 牵引 | **≈2,164 次/周**（PyPI 1,495 + npm 669）；GitHub 仅 12 star（CLI 分发形态，star 低估它） |
+| 定位 | **自托管证据与门控层**——"**Open source. No SaaS. No telemetry. No signup.**" |
+| 占据的支柱 | ⚠️ **三根全占**：v1.1.0 强制执行（credential broker + attestation-bound grant + gateway + typed capability scopes）；v1.4.0 gap-evident completeness（逐条签名 seq + running count，`vaara verify-contiguity`）；**且自托管零出境** |
+| 它独有的工程 | **Vaara Resin**（单 HTML 断网验证，"verification is not a service and Vaara is not a party to it"）、**v1.14.0 独立重铸逐字节重现**、**50 套一致性套件公开且无黑名单**、TPM 2.0 + IMA 硬件根植、eIDAS 合格时间戳、逐条 EU AI Act 证据 + Notified-Body PDF、SLSA L3 + Sigstore + fuzzing、**自家营销站点跑在自己的门控下** |
+| 它没有的 | ❌ 支付语义（x402 只是下游 profile）、❌ 用户自签凭据（grant 由**它自己的 broker 铸造**）、❌ 报价漂移 / payTo / 累计限额、❌ 链上锚定（用 RFC 3161，**合规上这是优势**） |
+| 弱点 | 巴士系数 = 1、不收外部贡献、**强制执行与完整性默认关闭**、12 star 无社区表面、AGPL 对企业法务的摩擦 |
+
+**威胁等级：最高。** 它是唯一一家在**能力面、牵引、合规包装、可验证性工程**四个维度同时压过 Ledgeroot 的对手。**Ledgeroot 仅剩的差异是"支付语义 + 凭据由用户自签"两条。**
+
+> 📌 **注意它不属于"载波"。** 它的格式开放接入，但它有定价、有牵引、在与我们抢同一位置——**"格式开放"不等于"不是对手"**。见 [standards-landscape.md](./standards-landscape.md) §7.2。
+
 ---
 
 ## 五、D 类：相邻与间接
@@ -428,21 +468,28 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | **AWS Bedrock AgentCore** | 审计轨迹打包 + 作为 Bazaar 分发通道 | 平台级；既是渠道也是威胁 |
 | **AgentlyHQ / use-agently / aixyz** | 框架 + 市场 | 框架层，正交 |
 
-### D1. ⚠️ 2026 年新出现的一类：学术界的"agent 执行证据"体系
+### D1. ⚠️ 学术与标准层 —— 已单独成文，且结论比想象的严重
 
-这一类的共同点：**不碰支付**，做的是"agent 这次执行到底干了什么"的完整证据——比收据更宽，是**会话级**的。目前是论文不是产品，但它们在抢同一套词汇和同一份"审计级证据"的定义权。
+> 📄 **完整调研见 [standards-landscape.md](./standards-landscape.md)。** 本节只保留摘要与指向。
 
-| 工作 | 内容 | 与 Ledgeroot 的关系 |
+2026 年 3–9 月间，这一层从"零散论文"变成了**带一致性测试向量的正式规范**。原分类法（载波 / 垄断者 / 直接竞品 / 相邻 / 监管）**没有覆盖"学术与标准的定义权"这一层**，而它现在是威胁最大的那一层。
+
+| 工作 | 性质 | 占据了什么 |
 |---|---|---|
-| **NovaFabric**（arXiv 2609.12582，2026-09-11，预印本） | **最值得读的一篇。** Run Capsule（15 类实体 schema）+ **DSSE/ECDSA P-256 签名** + **RFC 3161 时间戳** + **append-only Merkle log** + **redaction attestation**；四模式 replay（exact/mocked/semantic/forensic）；Evidence Bundle 供第三方用**原厂工具**离线验证 | ⚠️ **它把 Ledgeroot 想做的事在"非支付"维度做全了**：签名、时间戳、Merkle log、离线导出、schema 版本演进（Invariant 4）、可移植证据包。**但它明确不管支付、没有 mandate、没有策略强制、没有用户签名授权**。它同时是一份极高质量的相邻工作综述——它引用的 Notarized Agents / HANSARD / Auditable Agents / Verifiability-First Agents / BlockA2A 是下一批要盯的对象 |
-| **Notarized Agents** | 把证明移到接收方：服务方签它观察到调用、加密给 owner、发到见证共签的透明日志 | 思路与"证据主权"接近，但是托管式 |
-| **HANSARD** | 取证就绪参考架构，在 agent 触不到的 choke point 采集，PROV-DM 因果证据 + 事后 replay | 采集点思路值得借鉴 |
-| **Auditable Agents** | 署名 + SHA-256 哈希链的 append-only 记录，自认上游委派链归属"部分完成" | 与 Ledgeroot 哈希链同构 |
-| **Verifiability-First Agents** | 高风险操作挂运行时密码学证明 + 轻量审计 agent | 与策略层相邻 |
+| **OAP**（arXiv 2603.20953，2026-03-21，APort） | Apache-2.0 规范 + 参考实现 + 线上 CTF + 标准提案 | ⚠️ **支柱 1**：签名 passport、21 个策略包、fail-closed、签名拒绝 + reason code、Claude Code 等 6 框架钩子、p50 53ms |
+| **Vaara Receipt**（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页） | IETF 草案 + 公开一致性向量 + 独立 checker | ⚠️ **支柱 2**：`seq` + 签名 `runningCount` + 封存记录 + RFC 3161 锚——**比 Ledgeroot 更完整** |
+| **PCAS**（2602.16708）/ **AgentSpec**（2503.18666）/ **AgentGuardian** / **Safiron** / **Proof-of-Guardrail**（2603.05786）/ **L-DREA** | 论文 | 支柱 1 的其他路线（Datalog 参考监视器、TEE 证明、学习型策略） |
+| **NovaFabric**（2609.12582） | 预印本 | 会话级执行证据；self-contained tier 最接近"证据主权" |
+| **TRACE**（IEEE BigDataSecurity 2026）/ **Salfeld-Nebgen**（2606.26298）/ **He & Yu**（2606.20520、2606.11632） | 论文 | 逐动作证明 + 机构证明模型 |
+| **IETF 六草案**：ACTA、**ASQAV**（映射 EU AI Act + DORA）、AgentROA、sahu 动作收据、**kuehlewind 审计架构**、VCP | 草案 | 收据信封、强制代理、审计架构——**定义权正在被分配** |
+| **SoK**（2604.15367） | 系统化综述 | agentic commerce 的 5×12 威胁分类；**D2「transaction authorization」已映射 AP2/ACP/MPP/x402** |
 
-**为什么这一类要单列**：`threat-landscape.md` 原本的分类法（载波 / 垄断者 / 直接竞品 / 相邻 / 监管）**没有覆盖"学术定义权"这一层**。NovaFabric 的 Table 1 直接给出了一个"审计级证据"的六维定义（schema / seal / forensic replay / provenance / redaction / neutrality），并逐项给所有现成系统打分——**这是一种比产品更慢但更彻底的占位方式**。Ledgeroot 若要进入企业采购语言，很可能要与这套词汇对齐或竞争。
+**两条必须记住的判断**：
 
-> ⚠️ 但也要看到它们的边界：NovaFabric 自己写明 **"The contribution is integration, not new cryptography"**、**"conditional verifiability"**（签名持有者可签一份假 capsule 而无人能察），且**支付、授权、策略全部不在范围内**。这正是 Ledgeroot 的位置。
+1. **支柱 1 与支柱 2 都已被占据**，后者由 Vaara 做得更完整（逐条粒度、缺口最坏情况界定、独立可验证性、eIDAS 时间戳）。`commercialization.md` §四 把"唯一能证明没有遗漏"当作唯一可变现之物——**该结论已不成立**。
+2. **"transaction authorization" 已是学术通用术语**（SoK 的 D2 维度），不再是可占位的概念。
+
+> 📌 剩余真空只有三条，且都不是"技术做不到"：**本地优先/零外泄作为一等承诺**、**用户 EIP-712 签名 mandate 作为授权凭据**、**三者的合并**。详见 [standards-landscape.md](./standards-landscape.md) §六 §七。
 
 ---
 
@@ -471,14 +518,20 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | 离线验证 | 快速商品化 | PEAC、Traceipt、TrustBench、EVIDIQ 都声称支持 | **6–12 个月** | ✅ 已有，且**零网络**（对手多需抓 JWKS / RPC） |
 | 交付证明（response hash） | 已有标准提案 | x402 草案的 DeliveryReceipt；**Black_Wall 已在签 (request, response)** | **6–12 个月** | ✅ 已有（第 6 段已修）；**且拒付也出收据——无人对标** |
 | 预行动闸门（一般意义） | **已被占据** | **Black_Wall v1.0 有定价、111 次/周下载**；**arXiv TrustBench 已学术化** | **已过** | ⚠️ 有，但**不要用这个词**（见下） |
-| 合格时间戳（RFC 3161 / eIDAS） | **正在商品化** | **Vaultra（Sectigo eIDAS QTSP）、NovaFabric** 都已实现 | **6–12 个月** | ❌ **无** ← 新增，EU 场景的真实落差 |
 | 会话级执行证据（非支付） | 学术已占位 | NovaFabric 的 Run Capsule / Evidence Bundle | — | ❌ 不在范围内（但要知道它的存在） |
 | 人类可读交付物（VAT PDF / 审计报告） | 已被占据 | **Traceipt（VAT 合规 PDF）、Vaultra（auditor-ready PDF）** | **已过** | ❌ **无** ← 这是进会计流程的门票 |
-| **用户签名授权的确定性强制** | **无人在做** | Black_Wall 是托管 LLM 推理（4–8 秒、无用户签名）；arXiv TrustBench 是 LLM-as-a-Judge 校准；PEAC 明说不做 policy engine；TrustBench 是服务端厂商限额 | **低** | ✅ **独有** |
-| **非省略证明（完整性）** | **无人在做** | x402 草案测试 3.2.4 明确承认遗漏不可检测；BlueTier / EVIDIQ / Vaultra 均无；agentstamp 的哈希链只覆盖平台事件 | **低** | ✅ **独有** |
-| **证据主权（本地 + 零外泄 + 有强制力）** | **无人在做** | Coinbase / TrustBench / Black_Wall 结构上做不到；**EVIDIQ 全文上传、Vaultra 全文上传、Traceipt 哈希出境** | **低** | ✅ **独有** |
+| **用户签名授权的确定性强制** | ❌ **已到期**（2026-09-17 修正） | **OAP（arXiv 2603.20953）已规格化并实测**：签名 passport + 21 策略包 + fail-closed + 签名拒绝 + 6 框架集成；PCAS 用 Datalog 参考监视器走另一条路 | **已过** | ⚠️ **仅剩"用户自己签"+"零出境"两点差异** |
+| **非省略证明（完整性）** | ❌ **已到期**（2026-09-17 修正） | **Vaara Receipt §6.4 已规格化且更完整**：`seq` + 签名 `runningCount` + 封存记录 + RFC 3161 锚 + `maxClass`；带公开一致性向量 | **已过** | ❌ **落后**（无逐条计数、无缺口最坏情况、无独立 checker） |
+| **证据主权（本地 + 零外泄 + 有强制力）** | ❌ **已到期**（第四次修订更正） | **Vaara 已占据**："No SaaS. No telemetry. No signup." + 断网单文件验证 + "证据不依赖厂商"；OAP 走云端注册表、EVIDIQ / Vaultra 全文上传、Traceipt 哈希出境 | **已过** | ⚠️ **仅剩平价，且我们这一侧还差一截** |
+| 合格时间戳（RFC 3161 / eIDAS） | **已商品化** | **Vaara（含 eIDAS 合格 TSA）、Vaultra、NovaFabric** 都已有；RFC 3161 本身还有**自托管**形态（OpenSSL ts） | **已过** | ❌ **无** |
+| 公开一致性向量 + 独立 checker | **已商品化** | **Vaara（`_check_independent.py`）、Traceipt（`traceipt-verify`）、TrustBench（`verify-receipt`）** 都有 | **已过** | ❌ **无** |
+| **用户签名的授权凭据本身** | **无人在做** | OAP 的 passport 由**注册表签发**；Vaara 的 grant 来自 **credential broker**；两者都不是"用户自己签、私钥不出本机" | **低** | ✅ **独有 ← 但这只是凭据形式，不是完整能力** |
 
-**读法**：中间三行"低"是 Ledgeroot 应该把全部火力集中过去的地方。上面六行已商品化或即将商品化的能力，应**接入标准或停止自研竞争**——其中**后量子签名、跨语言规范化、独立验证器包**三项是已被对手拉开、需要补的（见 §C1 状态修正）。
+**读法（2026-09-17 修正后）**：
+
+- **只有最后一行"低"是真正剩下**——而且它只是**凭据形式**上的独有，不是完整能力。
+- **前两行从"低"变成"已过"**：支柱 1 与支柱 2 都被正式规格化了。**不要再拿它们做定位。**
+- 上面已商品化的能力应**接入标准或停止自研竞争**。其中已被对手拉开、需要补的是：**后量子签名、跨语言规范化、独立验证器包**（见 §C1 状态修正）、**RFC 3161 合格时间戳、公开一致性向量**（见 [standards-landscape.md](./standards-landscape.md)）。
 
 > ⚠️ **新增两条被低估的商品化压力**：**RFC 3161 合格时间戳**与**人类可读交付物**。前者 Vaultra 与 NovaFabric 都已用上，且它在 EU 有独立法律地位；后者 Traceipt 与 Vaultra 都已交付 PDF。Ledgeroot 目前两者皆无，而这两样恰好是"把证据卖进企业"时最先被问到的。
 
@@ -495,9 +548,17 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 
 ## 八、Ledgeroot 的防御位置（三根支柱）
 
-### 支柱 1：授权，不是存证
+> ⚠️ **2026-09-17 重大修正**：本节原写"三根支柱均未被覆盖"。经 [standards-landscape.md](./standards-landscape.md) 的学术与标准层调研，**支柱 1 与支柱 2 均已被正式规格化**，其中支柱 2 由 Vaara Receipt 做得比 Ledgeroot 更完整。**支柱 3 是唯一形态未变的。**
 
-全行业在做**事后**存证。Ledgeroot 做**事前**强制：
+| 支柱 | 原状态 | 现状态 | 占据者 |
+|---|---|---|---|
+| 1. 用户签名授权 + 执行前确定性强制 | "无人完整实现" | ❌ **已被占据**（规范 + 参考实现 + 线上实测 + 6 框架集成） | **OAP**、PCAS 等 |
+| 2. 完整性（非省略） | "无人在做" | ❌ **已被占据且更完整** | **Vaara Receipt §6.4** |
+| 3. 证据主权（本地 + 零外泄） | "无人在做" | ❌ **已被占据**（第四次修订更正） | **Vaara**：自托管、无 SaaS、无遥测、断网可验 |
+
+### 支柱 1：授权，不是存证 —— ⚠️ 已被 OAP 占据
+
+Ledgeroot 的做法本身没错：
 
 ```
 用户 EIP-712 签名 mandate（白名单 / payTo 绑定 / 报价漂移 / 限速 / 累计上限）
@@ -506,23 +567,53 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
     → 授权与执行的一致性可被事后审计
 ```
 
-- PEAC 明言不做 policy engine
-- TrustBench 的限额是**厂商按 API key 发的**，用户无法验证
-- **"用户签名的意图 → 机器强制执行 → 拒绝也有据"这条链，目前无人完整实现**
+**但 OAP 已经把这套做成了规范、参考实现、和一个跑着数据的线上对抗测试场**（详见 [standards-landscape.md](./standards-landscape.md) §1.1）：
 
-### 支柱 2：完整性（非省略）
+- 它有 **Ed25519 签名 passport**（含 `currency_limits{max_per_tx, daily_cap}`）、**21 个策略包**、fail-closed、**带 reason code 的签名拒绝记录**
+- 它有 **6 个框架的生产集成**，包括 **Claude Code `PreToolUse`**
+- 它有实测数据：4,437 次判定 / 1,151 会话，宽松策略下社科工程成功率 **74.6% → 严格策略下 0%**
+- 它把五条性质（确定性 / 完备性 / fail-closed / 非绕过 / 可审计）做了形式化，并提出标准控制类 **PAA-1…PAA-5**
+- 许可 **Apache 2.0**，规范带 DOI
 
-- Ledgeroot 的哈希链回指 + epoch Merkle 根可证明**序列无缺口**
-- x402 草案测试 3.2.4 明确显示：**遗漏不影响单张签名有效性** → 省略不可检测
-- 审计场景里"**能证明没漏**"比"每张都签了名"更硬
+原表的三条论据现在两条失效：
 
-> 当前 README 把这一点写成了一行。**应提升为核心卖点。**
+- ~~PEAC 明言不做 policy engine~~ → **OAP 做了，而且做全了**
+- ~~TrustBench 的限额是厂商按 API key 发的，用户无法验证~~ → **仍成立**，但这不再是独特卖点
+- ❌ ~~"用户签名的意图 → 机器强制执行 → 拒绝也有据"这条链，目前无人完整实现~~ → **不成立**
 
-### 支柱 3：证据主权
+**仅存的差异只有两条**（详见 standards-landscape.md §1.3）：**凭据由用户自己签（而非注册表签发）**，以及**零出境**。其余被覆盖或反超——OAP 还在两处比 Ledgeroot 强：**框架钩子面**与**组合攻击的诚实披露**。
 
-- 本地 SQLite、无服务器、零网络、零外泄
+### 支柱 2：完整性（非省略）—— ⚠️ 已被 Vaara Receipt 占据，且更完整
+
+> ❌ **本节原标题下的结论"无人在做"已不成立，`commercialization.md` §四 据此得出的"唯一可以拿去卖的东西"同样不成立。**
+
+Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页）§6.4 规格化了完整的 held-set 完整性机制：
+
+| 层 | Vaara | Ledgeroot |
+|---|---|---|
+| 顺序 | 单调 `seq` | `prevHash` + `seq` |
+| 漏发检测 | **签名进记录的 `runningCount`**，逐条 | epoch Merkle 根 + `receiptCount`，逐 epoch |
+| 尾部截断 | 显式**封存记录** `total: N` | 隐含（按 `receiptCount` 切片） |
+| 残余情形 | **对 `runningCount` 打 RFC 3161 锚** | 靠下一 epoch 的链上锚（等效） |
+| 缺口最坏情况 | **`maxClass`**，可在执行期消费 | ❌ 无 |
+| 独立可验证 | ✅ 公开向量 + 不 import 签发方代码的 checker | ❌ 与主库耦合 |
+
+它的原文明确宣称：*"None defines the held-set completeness mechanism ... **This document specifies both.**"*
+
+**保留仍然成立的部分**：x402 草案测试 3.2.4 确实显示"遗漏不影响单张签名有效性"，因此"**能证明没漏**比每张都签名更硬"这个判断依然正确——**只是它不是我们独有的洞察，也不再有独家的实现**。
+
+### 支柱 3：证据主权 —— ❌ **也被占了，是 Vaara 占的**
+
+> ⚠️ **第四次修订更正**：本节原写"部分占据，仍是唯一形态未变的支柱"，并判断"没有对手在技术上做不到，只是他们的商业模式不允许"。**该判断错误。** **Vaara 已经转身进来了。**
+
+- 本地 SQLite、无服务器、零网络、零外泄 —— Ledgeroot 的做法本身没错
 - Coinbase 与 TrustBench **结构上无法提供**（必须看见流量才能变现）
-- PEAC 是库，做得到但**没有强制力**
+- **Vaara 的做法**：官网首行 *"Open source. **No SaaS. No telemetry. No signup.**"*；**单 HTML 文件断网验证**且"收据不出标签页"；原文 *"The evidence does not depend on the vendor; that is the point of the design."*
+- 其余对手仍然出局：OAP 走 `aport.io` 云端注册表、EVIDIQ 与 Vaultra 全文上传、Traceipt 哈希出境
+
+**Vaara 在这条支柱上比 Ledgeroot 更彻底**：Ledgeroot 是"本地 SQLite + CLI"，Vaara 是"断网单文件可验 + 明确宣称验证不是一项服务"。**支柱 3 不再是差异，只是平价——而且我们这一侧还差一截。**
+
+> 📌 **准确表述**：Ledgeroot 剩下的不是三根支柱，而是**"支付专用的用户签名授权 + 零出境"这一格**。见 [vaara-competitive-analysis.md](./vaara-competitive-analysis.md) §六。
 
 ---
 
@@ -554,6 +645,25 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 - [ ] 用锚定 + 哈希链补上 PEAC 的"5 分钟过期即不能验"缺陷
 - [ ] 提交 x402 Bazaar / Agentic.Market / 官方 MCP Registry
 - [ ] **上 `skill.md` / `llms.txt` / `/.well-known/` 发现面**（对照 TrustBench 与 EVIDIQ：两者都有，EVIDIQ 已上架 OKX.AI，`claude mcp add` 一行接入）—— Ledgeroot 本身就是 MCP server，成本极低
+
+### ❗ 接入学术与标准层（2026-09-17 新增，优先级高于自研收据格式）
+
+> 依据：[standards-landscape.md](./standards-landscape.md) §七。**继续自研收据格式的边际价值已很低，成为对方规范里空着的那一环的边际价值很高。**
+
+- [ ] **按 Vaara §6.4 实现 held-set completeness**：`seq` + 签名 `runningCount` + 封存记录 `{boundaryId, sealed, total}` + 对计数打 **RFC 3161 锚**，替换或包住现有的"哈希链 + epoch Merkle 根"
+- [ ] **发布一致性向量 + 不 import 主库的独立 checker**（对标 Vaara `_check_independent.py`、`traceipt-verify`）
+- [ ] **发布一个 Vaara profile**——Vaara 明确欢迎下游只定义 evidence schema 而不重定义信封；Ledgeroot 的形状天然就是一个 profile
+- [ ] **发布一个 OAP policy pack**，并接入 OAP 的框架钩子面（Claude Code `PreToolUse` 等），而不是自建同等物
+- [ ] **加 RFC 3161 合格时间戳**（至少技术锚可自建，目标 eIDAS 合格 TSA）
+- [ ] **重新评估链上锚定的定位**：Vaara 与 NovaFabric 都用 RFC 3161；链上锚定在合规接受度上不优于合格时间戳，成本与依赖却更重。建议保留为**可选技术锚**，把 eIDAS 升为硬需求
+- [ ] **跟进 `draft-kuehlewind-audit-architecture`**——IETF 的 agent 委派审计架构，**刻意不定义线格式**，是形式规格化的入口
+- [ ] **跟进 ASQAV**（`draft-marques-asqav-compliance-receipts`，直接映射 EU AI Act + DORA）
+- [ ] **采纳学术通用术语 "transaction authorization"** 做对外对齐（SoK 2604.15367 的 D2 维度），不要另造词
+- [ ] ❗ **跑一遍 Vaara 的公开向量与 `_check_independent.py`**（零成本拿到外部验证基线，同时实测它的诚实度）
+- [ ] ❗ **读 Vaara 的 `docs/PRIOR_ART.md` 与 `docs/eu-ai-act-article-12.md`**——后者公开写了"第 12 条要求什么、不要求什么、该向工具要求什么"，**这正是我们打算自己去问审计师的那份功课**
+- [ ] ❗ **实现单文件断网验证器**（对标 Vaara Resin：浏览器直接验、收据不出本机）——**见 `roadmap.md` N10**
+- [ ] ❗ **实现独立重铸／逐字节复现**（对标 Vaara v1.14.0 independent re-mint）——**见 `roadmap.md` N11**
+- [ ] ❗ **重排发布优先级**：对手 **5 个月做到 v1.50.0**，我们的可见性与可验证性工程不能继续排在最后
 
 ### 进攻（护城河）
 
@@ -590,8 +700,18 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | **TrustBench（lithvall）** | 近 30 天签发收据从 **0** 变为非零 | 该对手从纸面进入实装 |
 | **arXiv TrustBench（ASU/UCLA）** | 出现开源实现或商业化产品 | "预行动验证"学术成果落地 → 用词必须彻底切割 |
 | **NovaFabric** | 从预印本转为产品，或把**支付/授权**纳入 schema | 会话级证据层向下挤压支付证据层 |
-| **任何玩家** | 实现**非省略证明 / 完整性证明** | ⚠️ 最高优先级警报 —— 支柱 2 被占 |
-| **任何玩家** | 实现**用户签名 mandate + 执行前确定性强制** | ⚠️ 最高优先级警报 —— 支柱 1 被占 |
+| **任何玩家** | 实现**非省略证明 / 完整性证明** | ⚠️ **已发生（2026-09-04，Vaara Receipt §6.4）** → 见 [standards-landscape.md](./standards-landscape.md) §二 |
+| **任何玩家** | 实现**用户签名 mandate + 执行前确定性强制** | ⚠️ **已发生（2026-03-21，OAP arXiv 2603.20953）** → 见 [standards-landscape.md](./standards-landscape.md) §一 |
+| **Vaara Receipt** | 草案进入 WG、获得多地实现，或 `-11+` 出现 held-set 完整性以外的机制扩展 | 形式标准成形 → 必须兼容或让位 |
+| **Vaara Receipt** | 出现"用户签名凭据"类的 profile（当前 grant 来自 credential broker） | ⚠️ **我们最后的凭据差异被覆盖 → 支柱全数失效** |
+| **OAP** | v1.1 落地（委派链形式化 + 滑动窗口防 structuring） | 其两处已知缺口被补齐 → 组合攻击优势消失 |
+| **OAP / APort** | 推出**本地优先 / 零外泄**模式，或 passport 改由用户自签 | ⚠️ **支柱 1 与支柱 3 同时被覆盖** |
+| **OAP** | 被 AAIF（Linux Foundation）或 A2A 正式采纳 | 定义权落定 → 只能跟随 |
+| **`draft-kuehlewind-audit-architecture`** | 从"不定义线格式"转向指定具体格式 | IETF 层面的定义权落定 |
+| **ASQAV** | 获得采纳（映射 EU AI Act + DORA） | 合规叙事入口被占 |
+| **NovaFabric** | 从预印本转为产品，或把支付/授权纳入 schema | 会话级证据层向下挤压 |
+| **PCAS / AgentSpec / AgentGuardian 等** | 出现生产级开源实现或商业化 | 支柱 1 的学术路线落地 |
+| **ERC-8004** | 正式采纳并出现注册表实现 | 身份层收口（对我们是机会，见 P1-4） |
 | **x402b（Pieverse）** | 收据脱离 BNB 生态、支持自托管或迁至 Base | 有资金的对手进入 Ledgeroot 的差异面 |
 | **IETF vauban** | 草案进入 WG 或获得多地实现 | 离线可验证成为正式标准 |
 | **EU AI Act** | 第 12 条出现针对 agent 支付的具体指引 | 需求窗口打开 |
@@ -641,6 +761,9 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 - **agentstamp**：[官网 About](https://agentstamp.org/about) · [vinaybhosle/agentstamp](https://github.com/vinaybhosle/agentstamp)
 - **Vaultra**：[vaultra.io](https://vaultra.io/) · [Jerryto10/vaultra](https://github.com/Jerryto10/vaultra) · [vaultra (PyPI)](https://pypi.org/project/vaultra/)
 - **NovaFabric 及 2026 学术相邻工作**：[arXiv 2609.12582 — NovaFabric: Tamper-Evident, Replayable Evidence for Autonomous AI Agent Runs](https://arxiv.org/abs/2609.12582)（其 §2 综述含 Notarized Agents / HANSARD / Auditable Agents / Verifiability-First Agents / BlockA2A）
+- ⚠️ **Vaara（第四次修订新增，完整拆解见 [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)）**：[官网](https://vaara.io/) · [GitHub](https://github.com/vaaraio/vaara) · [README](https://raw.githubusercontent.com/vaaraio/vaara/main/README.md) · [LICENSING.md](https://raw.githubusercontent.com/vaaraio/vaara/main/LICENSING.md) · [SPEC.md](https://github.com/vaaraio/vaara/blob/main/SPEC.md) · [Vaara Resin 验证器](https://vaara.io/verify.html) · [一致性结果页](https://vaara.io/conformance.html) · [PyPI](https://pypi.org/project/vaara/) · [npm @vaara/client](https://www.npmjs.com/package/@vaara/client)
+- ⚠️ **APort / OAP（第四次修订新增，在售产品，$499/$4,990 月费）**：[aport.io](https://aport.io/) · [arXiv 2603.20953](https://arxiv.org/abs/2603.20953) · [aport-spec](https://github.com/aporthq/aport-spec)
+- ⚠️ **学术与标准层（完整版见 [standards-landscape.md](./standards-landscape.md)）**：[OAP — Before the Tool Call（arXiv 2603.20953）](https://arxiv.org/abs/2603.20953) · [Vaara Receipt `draft-sirkkavaara-vaara-receipt-10`](https://datatracker.ietf.org/doc/html/draft-sirkkavaara-vaara-receipt-10) · [SoK: Agentic Commerce Security（arXiv 2604.15367）](https://arxiv.org/abs/2604.15367) · [Governing Actions, Not Agents（arXiv 2606.26298）](https://arxiv.org/abs/2606.26298) · [draft-kuehlewind-audit-architecture](https://datatracker.ietf.org/doc/draft-kuehlewind-audit-architecture/) · [draft-marques-asqav-compliance-receipts](https://datatracker.ietf.org/doc/draft-marques-asqav-compliance-receipts/) · [IMDA Agentic AI 框架 v1.5](https://www.imda.gov.sg/-/media/imda/files/about/emerging-tech-and-research/artificial-intelligence/mgf-for-agentic-ai.pdf)
 - [TrustBench 竞品分析（本仓库）](./trustbench-competitive-analysis.md) —— ⚠️ 该文档 §四 的 8 条代码缺陷中 6 条已修，阅读前先看其顶部修正说明
 - [EU AI Act 合规与 2026-08 截止日](https://atlan.com/know/eu-ai-act-compliance/) · [API 网关视角](https://zuplo.com/learning-center/eu-ai-act-api-gateway-compliance-guide)
 - [awesome-agentic-commerce](https://github.com/MikeyPetrillo/awesome-agentic-commerce)（生态索引，调研入口）

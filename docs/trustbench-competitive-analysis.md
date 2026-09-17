@@ -25,10 +25,11 @@
 
 **结论变化**：本文档 §二 的逐维度对比表与 §四 的"落后之处"清单**不再准确**，请以 [threat-landscape.md](./threat-landscape.md) §C1 的"状态修正"表为准（该表同时纳入了 Traceipt 的 `traceipt-verify` 一手自述）。
 
-**另外两处需要知道的新情况**：
+**另外三处需要知道的新情况**：
 
 1. **"TrustBench"是四家同名产品**，本文档只分析了其中一家（`trustbench.io`），而且是四家里最弱的一家。另有 `trustbench.net`（AI 输出质量评估 SaaS，$249/mo）、`trustmodel.ai/trustbench`（企业评估引擎）与 **arXiv 2603.09157**（ASU + UCLA 的"执行前实时信任验证"框架）。详见 threat-landscape.md §C3。
 2. **Traceipt（BlueTier）的密码学实现已被 Ledgeroot 追平**，仍在 PQ 签名、跨语言规范化、独立验证器上领先。详见 threat-landscape.md §C1。
+3. ⚠️ **学术与标准层的威胁大于本文档分析的全部对手**（2026-09-17 第四次修订新增）：**OAP**（arXiv 2603.20953）已占据"执行前确定性授权"，**Vaara Receipt**（`draft-sirkkavaara-vaara-receipt-10`）已占据"非省略证明"且比 Ledgeroot 更完整。**本文档 §六 §七 关于"我们真正没人抄得动的那一组"的判断已部分失效。** 详见 [standards-landscape.md](./standards-landscape.md)。
 
 ---
 

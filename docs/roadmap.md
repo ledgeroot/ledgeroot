@@ -1,7 +1,7 @@
 # Ledgeroot 行动规划
 
 > 制定日期：2026-09-17
-> 依据文档：[threat-landscape.md](./threat-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [commercialization.md](./commercialization.md)
+> 依据文档：[threat-landscape.md](./threat-landscape.md) · [standards-landscape.md](./standards-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [commercialization.md](./commercialization.md)
 > 适用范围：Ledgeroot（engine）+ MandateKey（dashboard）
 > 排序原则：**先正确性，再差异化，再可见性，最后公信力** —— 前者是后者的前提
 > 商业化定位：**开源内核 + 企业控制面 + 合规交付物**；本期不启动商业化，只做架构留缝
@@ -18,8 +18,13 @@
 4. **PEAC 是载波不是对手** —— 它明确声明不做 policy engine、不做路由。
 5. **Coinbase 是分发层** —— 不被索引等于不存在。
 6. **Pieverse（$7M，Animoca + UOB 领投，代币 + 2.4 亿用户分发）用 ERC-6551 提供了链上强制的消费限额** —— 这是对"用户授权"支柱的真实挑战。
+7. ⚠️ **（第四次新增）"执行前确定性授权"已被 OAP 正式规格化**（arXiv 2603.20953，2026-03-21）：Ed25519 签名 passport、21 个策略包、fail-closed、**签名拒绝 + reason code**、Claude Code 等 **6 个框架生产集成**、线上 CTF 实测（社科工程成功率 74.6% → 严格策略下 0%）、p50 53ms、Apache-2.0、提议标准控制类 PAA-1…5。
+8. ⚠️ **（第四次新增）"非省略证明"已被 Vaara Receipt 正式规格化**（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页）：`seq` + **签名进记录的 `runningCount`** + 显式**封存记录** + 对计数打 **RFC 3161 锚** + `maxClass` 界定缺口最坏情况；带**公开一致性向量**与不 import 签发方代码的独立 checker。**其 §11 原文明确宣称这些机制无人做过、本文两者都做了。**
+9. **"transaction authorization" 已是学术通用术语**（SoK 2604.15367 的 D2 维度，明确映射 AP2/ACP/MPP/x402），不再是可占位的概念。
+10. ⚠️ **（第四次修订二）性质判断更正：这些不是"学术界"，是厂商在售产品。** APort 定价 **$499 / $4,990 月费**；**Vaara 是 AGPL 自托管 + 付费 pilot + 商业许可**。
+11. ⚠️ **（第四次修订二）牵引排序更正**：**Vaara ≈2,164 次/周**（PyPI 1,495 + npm 669），**APort 614**，而原判断里"唯一有真实牵引"的 BlueTier 只有 **111**。**Vaara 是它的 20 倍。** 而且 **Vaara 建仓 2026-04-20，5 个月到 v1.50.0**。
 
-**结论**：Ledgeroot 不能靠"我们有锚定收据"取胜。必须把火力集中到**别人结构上做不到、或标准尚未覆盖**的地方。
+**结论（第四次修订二）**：Ledgeroot 不能靠"我们有锚定收据"取胜，**也不能再靠"我们证明没有遗漏"取胜**，**也不能靠"我们本地优先"取胜**——三者都已被 Vaara 占据。**唯一剩下的一格是"支付专用的用户签名授权 + 零出境"。** 同时必须承认：**对手的发布节奏比我们快一个数量级**，`§一` 原有的排序原则（正确性 → 差异化 → 可见性 → 公信力）在无订单但有标准位争夺的情况下需要重排。
 
 ---
 
@@ -81,52 +86,93 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 | N2 | **人类可读交付物**（VAT 合规 PDF / 审计报告） | Traceipt（VAT PDF + 扫码验证）、Vaultra（auditor-ready PDF + 公开验证 URL） | ❌ 无 | 机器可验 ≠ 会计可归档。这是进财务/审计流程的门票，也是 commercialization.md §三"合规交付物"那一层最先被问到的东西 |
 | N3 | **主网** | Traceipt / Black_Wall（Base 主网）、EVIDIQ（0G + X Layer 主网） | ❌ Monad **测试网** | 测试网上的锚定不能作为任何真实审计的凭据 |
 | N4 | **跨语言规范化变体** | Traceipt（键按 Unicode 码点排序 + 支持 Python `ensure_ascii` 变体） | ⚠️ 用 `canonicalize` 包，未处理变体 | 第三方用别的语言实现验证器时会对不上 |
-| N5 | **后量子签名** | Traceipt（混合 ML-DSA-65 双签） | ❌ 无 | 长期档案韧性；对手已领先 |
+| N5 | **后量子签名** | Traceipt（混合 ML-DSA-65 双签）；**Vaara 也把 ML-DSA-65 列为 MAY** | ❌ 无 | 长期档案韧性；对手已领先 |
+| N6 ❗ | **held-set completeness（逐条 runningCount + 封存记录）** | **Vaara Receipt §6.4** | ⚠️ 只有逐 epoch 的 Merkle 根，无逐条计数、无封存语义、无缺口最坏情况 | **原支柱 2 已被占**；现在的差距是工程粒度而非概念 |
+| N7 ❗ | **公开一致性向量 + 不 import 主库的独立 checker** | Vaara（`_check_independent.py`）、Traceipt（`traceipt-verify`）、TrustBench（`verify-receipt`） | ❌ 无 | 它是"第三方能独立验证"的唯一可证明形式；= 旧 N2 的前置条件 |
+| N8 ❗ | **RFC 3161 合格时间戳** | Vaara（含 **eIDAS 合格 TSA**，且技术锚可自托管）、Vaultra、NovaFabric | ❌ 无 | 见 N1；**Vaara 把它做成"技术锚／法律锚可分离"两种 method** |
+| N9 ❗ | **Vaara profile / OAP policy pack 的接入形态** | Vaara 明确欢迎下游只定义 evidence schema；OAP 策略包库开放 | ❌ 未开始 | 成为"对方规范里空着的那一环"比自研格式的边际价值更高 |
+| **N10** ❗ | **单文件断网验证器**（浏览器直接验、收据不出本机） | **Vaara Resin**——单 HTML、WebCrypto、断网可用，原文 "verification is not a service and Vaara is not a party to it" | ❌ 无 | 这是"零出境"最彻底的证明形式；**我们的支柱 3 叙事缺这一块就说不圆** |
+| **N11** ❗ | **独立重铸 / 逐字节复现**（第二个实现仅凭规范化规则重现签名载体） | **Vaara v1.14.0 independent re-mint**；50 套公开一致性套件 | ❌ 无 | "独立实现能复现"的最强形式，比"有 checker"更硬 |
+| **N12** ❗ | **发布节奏**（对手 5 个月从建仓到 v1.50.0） | Vaara 2026-04-20 建仓 → 2026-09 v1.50.0 | ⚠️ 见 §一 排序原则 | 不是能力差距而是**节奏差距**；可见性与可验证性工程不能继续排最后 |
 
-> 📌 **N2 与 N1 应优先于 P1–P3 的其他项**——它们是 `commercialization.md` §四"卖唯一能证明完整性的审计报告"能否成立的前提。**证明得再严谨，如果审计师拿不到一份能归档的东西，商业层就是空的。**
+> 📌 **N6 = 原支柱 2。** 它从"我们独有的卖点"变成了"必须补上的工程差距"。**N7 是 N2 与 N6 的共同前置条件**——审计师要能独立验证，就必须有向量和独立 checker。
 >
+> 📌 **N1/N8 应优先于 P1–P3 的其他项**——它们是 `commercialization.md` §四"卖审计报告"能否成立的前提。**证明得再严谨，如果审计师拿不到一份能归档、能用 eIDAS 时间戳定时的东西，商业层就是空的。**
+
 > 📌 **N3 是信誉问题**：`threat-landscape.md` §C1 已记录 Traceipt 用真实 Base 区块作验证示例。测试网锚定在对外沟通时会被当作"还没上生产"。
+>
+> 📌 **N6–N9 的紧迫性来自标准侧而非产品侧**：Vaara 的草案 4 天内从 `-08` 走到 `-10`，并已在 §11 点名四篇独立收敛的工作。**它的 profile 注册表是开放的接入点，但窗口不会一直开着。**
 
 ---
 
 ## 三、战略收敛：修订后的三根支柱
 
-> ⚠️ **重要修订**：Pieverse 的 ERC-6551 Agent 授权（"从用户既有钱包操作，带可编程消费限额和到期时间"）**已在链上做到用户授权的消费限额**。因此支柱 1 不能再说"无人在做"，必须换口径。
+> ⚠️ **重要修订一**：Pieverse 的 ERC-6551 Agent 授权（"从用户既有钱包操作，带可编程消费限额和到期时间"）**已在链上做到用户授权的消费限额**。因此支柱 1 不能再说"无人在做"，必须换口径。
+>
+> ⚠️ **重要修订二（2026-09-17 第四次，更严重）**：学术与标准层已经收走支柱 1 与支柱 2。**OAP**（arXiv 2603.20953）以签名 passport + 21 个策略包 + fail-closed + 签名拒绝 + 6 框架集成 + 线上 CTF 数据占据了"执行前确定性授权"；**Vaara Receipt**（`draft-sirkkavaara-vaara-receipt-10`）以 `seq` + 签名 `runningCount` + 封存记录 + RFC 3161 锚占据了"非省略证明"，**且比我们更完整**。详见 [standards-landscape.md](./standards-landscape.md)。
+>
+> **下面的支柱表述据此刻意改为"我们守住的是哪一格"，而不是"我们有什么"。**
 
-### 支柱 1（修订）：链上表达不了的约束 + 拒绝留痕 + 链无关凭证
+### 支柱 1（修订）：链上表达不了的约束 + 拒绝留痕 + **凭据由用户自签**
 
-承认 ERC-6551 在它覆盖的范围内**强制力更强**（合约层 > 本地校验）。Ledgeroot 守的是它守不住的部分：
+承认两个对手在各自覆盖范围内强制力更强——**ERC-6551** 在合约层强制（> 本地校验），**OAP** 在框架层强制且已有 6 个生产集成。Ledgeroot 守的是它们守不住的部分：
 
-| 约束 | 为什么链上难做 | Ledgeroot 现状 |
+| 约束 | 为什么别人难做 | Ledgeroot 现状 | 对手状态 |
+|---|---|---|---|
+| **报价漂移** | 需要对比 402 报价与实际扣款 | ✅ `quoteDrift` 策略 | OAP 无支付语义 |
+| **对手方白名单（host 维度）** | 链上只知道地址，不知道 host | ✅ `counterpartyWhitelist` | OAP 有 `allowed_domains`（⚠️ 已部分覆盖） |
+| **按端点的限速** | 链上无法表达"每端点每窗口调用次数" | ✅ `endpointRateLimit` | ⚠️ OAP 有 `max_calls_per_minute`（粗粒度） |
+| **组合攻击（累计上限）** | — | ✅ 有累计上限 | ⚠️ **OAP 明确承认防不住 structuring**，v1.1 才加 |
+| **拒绝留痕** | 链上不记录"被拦下的尝试" | ✅ 拒绝也生成收据 | ⚠️ **OAP 已有签名拒绝 + reason code** |
+| **凭据由用户自签** | OAP 的 passport 由**注册表签发**；Vaara 的 grant 来自 **credential broker** | ✅ EIP-712 本地签名，私钥不出本机 | ✅ **仍独有** |
+| **链无关凭证** | ERC-6551 绑定 EVM/单链 | ✅ EIP-712 domain 刻意不含 chainId | — |
+| **本地确定性 + 零出境** | OAP 默认走云端注册表与判定服务 | ✅ 毫秒级、零网络 | ✅ **仍独有（见支柱 3）** |
+
+### 支柱 2（修订）：完整性 —— ❌ **不再是我们独有的，必须改为"接入并达标"**
+
+> ⚠️ **本节原写"这是标准层面的空白"。** 该结论**已被 Vaara Receipt §6.4 推翻**：它有 `seq` + 签名 `runningCount` + 显式封存记录 + 对计数打 RFC 3161 锚，还带公开一致性向量与不 import 签发方代码的独立 checker。
+
+- ✅ 仍然成立：x402 草案测试 3.2.4 确实承认"遗漏不影响单张签名有效性"，"能证明没漏比每张都签名更硬"这个判断没错
+- ❌ 不再成立：**"Traceipt 亦无此能力 → 这是标准层面的空白"**
+- 现在的问题是**工程差距**而非概念空白：
+
+| | Vaara | Ledgeroot |
 |---|---|---|
-| **报价漂移** | 需要对比 402 报价与实际扣款 | ✅ `quoteDrift` 策略 |
-| **对手方白名单（host 维度）** | 链上只知道地址，不知道 host | ✅ `counterpartyWhitelist` |
-| **按端点的限速** | 链上无法表达"每端点每窗口调用次数" | ✅ `endpointRateLimit` |
-| **拒绝留痕** | 链上不记录"被拦下的尝试" | ✅ 拒绝也生成收据 |
-| **链无关凭证** | ERC-6551 绑定 EVM/单链 | ✅ EIP-712 domain 刻意不含 chainId |
-| **本地确定性** | 链上要 gas、要出块 | ✅ 毫秒级、零网络 |
+| 漏发检测 | 逐条 `runningCount` | 逐 epoch Merkle 根 |
+| 尾部截断 | 显式封存记录 | 隐含 |
+| 缺口最坏情况 | `maxClass` | ❌ |
+| 独立 checker | ✅ 公开向量 + `_check_independent.py` | ❌ |
 
-### 支柱 2：完整性（非省略证明）
+→ **动作：按 Vaara §6.4 实现，而不是继续自研。** 见 §2.4 的 N6–N9 与 [standards-landscape.md](./standards-landscape.md) §七。
 
-- 哈希链回指 + epoch Merkle 根 → **可证明序列无缺口**
-- x402 草案测试 3.2.4 明确承认"遗漏不影响单张签名有效性"→ **省略不可检测**
-- Traceipt 亦无此能力
-- **这是标准层面的空白，且审计场景里"能证明没漏"比"每张都签名"更硬**
-- 当前 README 只写了一行 → **应提升为核心卖点**
+### 支柱 3（修订）：证据主权 —— ⚠️ **不再是我们独有的**
 
-### 支柱 3：证据主权
+> ⚠️ **第四次修订二更正**：本节原写"Coinbase / TrustBench / Black_Wall 结构上做不到"。**Vaara 已经做到了，而且比我们更彻底。**
 
-- 本地 SQLite、无服务器、零网络、零外泄
-- Coinbase / TrustBench / Black_Wall **结构上做不到**（必须看见流量才能变现）
-- Pieverse **方向相反**（TEE 托管钱包 + Facilitator 生成收据 + 存 Greenfield）
-- PEAC 做得到但没有强制力
+- 本地 SQLite、无服务器、零网络、零外泄 —— 做法没错
+- Coinbase / TrustBench / Black_Wall **结构上做不到**（必须看见流量才能变现）—— ✅ 仍成立
+- Pieverse **方向相反**（TEE 托管钱包 + Facilitator 生成收据 + 存 Greenfield）—— ✅ 仍成立
+- PEAC 做得到但没有强制力 —— ✅ 仍成立
+- ❌ **Vaara**：官网首行 *"Open source. **No SaaS. No telemetry. No signup.**"*；**单 HTML 断网验证**且收据不出标签页；原文 *"The evidence does not depend on the vendor; that is the point of the design."* —— **这是自托管 + 零出境 + 无厂商依赖的完整实现**
+
+| | Vaara | Ledgeroot |
+|---|---|---|
+| 自托管 | ✅ | ✅ |
+| 无 SaaS / 无遥测 | ✅ 明示 | ✅ |
+| 断网可验证 | ✅ **单 HTML 文件** | ⚠️ CLI 本地读 SQLite |
+| "验证不是一项服务"的表述 | ✅ 明写 | ❌ 无 |
+| 牵引 | ≈2,164/周 | 0 |
+
+→ **动作：补 N10（单文件断网验证器）。** 在补齐之前，"本地优先"是**平价而非优势**，不能再用作差异化定位。
 
 ### 词汇纪律（必须遵守）
 
 | ❌ 不要用 | ✅ 改用 | 原因 |
 |---|---|---|
-| 预行动闸门 / pre-action gate | **用户签名的确定性强制** | 已被 Black_Wall 占据，且有牵引 |
-| 收据 / signed receipt（单独用） | **完整性证明 / 非省略证明** | "签名收据"已商品化，单独用等于无差异 |
+| 预行动闸门 / pre-action gate | **用户签名的确定性强制** | 已被 Black_Wall 与 arXiv TrustBench 占据 |
+| 收据 / signed receipt（单独用） | —— **已失效，见下** | "签名收据"已商品化 |
+| **完整性证明 / 非省略证明**（作为独有卖点） | **按 Vaara §6.4 实现并达标** | ⚠️ **已被 Vaara 占据且更完整，不能再说"我们有"** |
+| **本地优先 / 零外泄**（作为独有卖点） | **支付专用的用户签名授权 + 零出境** | ⚠️ **已被 Vaara 占据，只剩平价** |
 | 基准 / benchmark | **可复现验证** | TrustBench 因滥用此词被迫重写定位 |
 | 合规收据（泛化） | **EU AI Act 第 12 条高风险场景对齐** | 第 12 条只覆盖高风险系统，泛化会被拆穿 |
 
