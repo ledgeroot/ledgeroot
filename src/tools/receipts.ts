@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import type { Receipt } from "../types.js";
 import { epochRoot } from "../anchor/anchorer.js";
+import { DEFAULT_RPC_URL } from "../chains.js";
+import { checkSettlements, createSettlementReader } from "../verify/onchain.js";
 import { classify, verifyAnchor, verifyReceiptChain } from "../verify/verifier.js";
 
 export const receiptListInput = {
@@ -16,8 +18,17 @@ export const receiptGetInput = {
 };
 export const receiptGetInputSchema = z.object(receiptGetInput);
 
+export const verifyInput = {
+  checkChain: z
+    .boolean()
+    .optional()
+    .describe("Also confirm each paid receipt's settlement against the chain (requires RPC access)"),
+};
+export const verifyInputSchema = z.object(verifyInput);
+
 export type ReceiptListInput = z.infer<typeof receiptListInputSchema>;
 export type ReceiptGetInput = z.infer<typeof receiptGetInputSchema>;
+export type VerifyInput = z.infer<typeof verifyInputSchema>;
 
 export function listReceipts(services: LedgerootServices, input: ReceiptListInput) {
   return { receipts: services.store.listReceipts(input) };
@@ -62,6 +73,21 @@ export function verify(services: LedgerootServices) {
         }
       : null,
   };
+}
+
+/**
+ * Verify the ledger offline, then confirm each paid receipt's settlement
+ * against an EVM node. The chain pass is opt-in: the offline verification is
+ * the guarantee, and it must keep working with no network at all.
+ */
+export async function verifyOnChain(services: LedgerootServices, rpcUrl?: string) {
+  const offline = verify(services);
+  const chainIssues = await checkSettlements(
+    services.store.listReceipts(),
+    createSettlementReader(rpcUrl ?? process.env.LEDGEROOT_RPC_URL ?? DEFAULT_RPC_URL),
+  );
+  const issues = [...offline.issues, ...chainIssues];
+  return { ...offline, status: classify(issues), issues };
 }
 
 export async function anchor(services: LedgerootServices) {

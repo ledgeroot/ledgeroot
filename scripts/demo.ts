@@ -46,6 +46,9 @@ async function main(): Promise<void> {
       quoteAmount: "0.1",
       quoteHash: `0x${"0".repeat(64)}`,
       endpoint: "/search",
+      // What the agent got back, so segment 6 covers delivery and not just the
+      // payment — only its hash and size are recorded.
+      responseBody: JSON.stringify({ query: "agent payments", results: 3 }),
     };
     const pay = await handlePay(services, base);
     console.log("② 正常支付", JSON.stringify(pay));

@@ -22,8 +22,8 @@ export interface VerificationResult {
   issues: Issue[];
 }
 
-const tampered = (message: string): Issue => ({ kind: "tampered", message });
-const incomplete = (message: string): Issue => ({ kind: "incomplete", message });
+export const tampered = (message: string): Issue => ({ kind: "tampered", message });
+export const incomplete = (message: string): Issue => ({ kind: "incomplete", message });
 
 /** A definite mismatch outranks missing evidence. */
 export function classify(issues: Issue[]): VerificationStatus {

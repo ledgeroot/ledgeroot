@@ -180,11 +180,18 @@
 
 ### P0-5. 第六段交付凭据做实
 
+> ✅ **已完成（2026-09-17）**。
+> 关键认识：**Ledgeroot 结算支付，但不抓取资源**——响应体只有调用方见过。所以第六段不可能由引擎自己产生，必须由调用方回报。
+> 实现：`ledgeroot_pay` 新增可选 `responseBody`；有值则写入 `delivery.payloadHash`（`contentHash`，对**原始字节**做 SHA-256，不走 JCS 规范化）与 `payloadSize`；无值则 `delivery` 保持为空。**移除了原先 `segments.delivery = { payloadHash: payment.txHash }` 这个假值**，并删掉了从未使用的 `delivery.proof` 字段。
+> 附带：`segments.tx` 新增 `payer`（见 P0-7 需要它做 `from` 比对），`PaymentResult` 相应返回付款地址。
+> 验证：新增 4 个用例——记录 tx 与 payer、记录响应体哈希与字节数、无响应体时 delivery 为空、响应体变化则哈希变化。demo 已改为回报响应体，dry-run 现在能展示真实的第六段。
+
 - **为什么**：D5。以"六段收据"为品牌，第六段是假的，这是叙事上的自我拆台。
-- **做什么**：对实际响应体做 `canonicalHash` 存入 `delivery.payloadHash`，并补 `responseSize` / `latencyMs`
+- **做什么**：对实际响应体做哈希存入 `delivery.payloadHash`，并补尺寸
 - **涉及**：`src/tools/pay.ts`、`src/types.ts`（`ReceiptSegments.delivery`）、`test/pay.test.ts`
 - **验收**：相同响应 → 相同 payloadHash；响应被改 → 哈希变化
 - **参考**：x402 草案 `DeliveryReceipt.responseHash = keccak256(raw HTTP response body)`
+- ⚠️ **有意未做 `latencyMs`**：Ledgeroot 不发起资源调用，无法诚实测量该延迟。填一个调用方随手给的数字，正是 D5 要修的那种"塞个看起来合理的东西进去"。
 
 ### P0-6. 锚定合约加权限控制
 
@@ -197,6 +204,13 @@
 
 ### P0-7. 链上结算内容校验
 
+> ✅ **已完成（2026-09-17）**。
+> 实现：新增 `src/verify/onchain.ts`。核心是 `SettlementReader` 接口——把"读链"与"判定"分开，判定逻辑因此可在无节点的环境下测试。viem 实现 `createSettlementReader(rpcUrl)` 读交易 + 回执并解码 ERC-3009 `transferWithAuthorization`。
+> 判定项：交易存在、执行成功、`to` 是 USDC 合约、授权的 `to`/`value`/`from` 与收据的 payTo/amount/payer 一致。
+> ⚠️ **`tampered` / `incomplete` 的界线在这里最关键**：交易查不到 → `tampered`（链上没有这笔）；**节点连不上 → `incomplete`**（读不到 ≠ 不存在）。这是刻意区分的——把网络故障报成篡改，会让整个告警失去可信度。
+> 接入：`verifyOnChain()`（`tools/receipts.ts`）、CLI `ledgeroot verify --check-chain`、MCP `ledgeroot_verify` 的 `checkChain` 参数。**离线路径保持同步且零网络**，链上校验是显式选用。
+> 验证：新增 `test/onchain.test.ts`（12 个用例，含节点不可达报 incomplete、未知链报 incomplete、付款方不符报 tampered、只校验 paid 收据）。
+
 - **为什么**：D7。**这是"verified"可能为假的直接来源**，也是 Traceipt 的 `--check-chain` 已做的事。
 - **做什么**：新增链上校验步骤
   1. 按 `segments.tx.txHash` 从 RPC 拉交易
@@ -206,7 +220,6 @@
   5. 确认为成功出块
 - **涉及**：`src/verify/verifier.ts`、新增 `src/verify/onchain.ts`、`src/chains.ts`、`test/`
 - **验收**：伪造的 txHash → 校验失败；真实交易 → 通过
-- **依赖**：需要 `src/chains.ts` 提供 RPC 客户端（已有 `chains.ts`，需确认是否够用）
 
 ### P0-8. 收据排序改为单调追加序号 ⭐ 新发现，高优先
 

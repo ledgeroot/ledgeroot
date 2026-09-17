@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Hex } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { toUnits } from "../decimal.js";
+import { DRY_RUN_PRIVATE_KEY } from "../env.js";
 
 /**
  * x402 payment protocol integration against the Monad facilitator.
@@ -29,6 +30,8 @@ export interface X402Quote {
 export interface PaymentResult {
   txHash: string;
   chainId: number;
+  /** Address the funds were authorized from, so settlement can be checked. */
+  payer?: string;
 }
 
 export interface PaymentProvider {
@@ -62,12 +65,15 @@ export const MONAD_FACILITATOR_URL = "https://x402-facilitator.molandak.org";
 /** Deterministic payment provider for dry-run demos — no network, no wallet. */
 export class DryRunPaymentProvider implements PaymentProvider {
   private sequence = 0;
+  /** The same throwaway key the demo signs with, so the run stays coherent. */
+  private readonly payer = privateKeyToAccount(DRY_RUN_PRIVATE_KEY as Hex).address;
 
   async pay(_quote: X402Quote): Promise<PaymentResult> {
     this.sequence += 1;
     return {
       txHash: `0x${this.sequence.toString(16).padStart(64, "0")}`,
       chainId: MONAD_TESTNET_X402.chainId,
+      payer: this.payer,
     };
   }
 }
@@ -145,7 +151,11 @@ export class FacilitatorClient implements PaymentProvider {
       throw new Error(`facilitator /settle failed: ${reason}`);
     }
 
-    return { txHash: extractTxHash(settled), chainId: this.config.network.chainId };
+    return {
+      txHash: extractTxHash(settled),
+      chainId: this.config.network.chainId,
+      payer: account.address,
+    };
   }
 
   private async authorize(

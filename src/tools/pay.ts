@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import { buildReceipt } from "../receipt/builder.js";
+import { contentHash } from "../receipt/hashchain.js";
 import { add } from "../decimal.js";
 import type { ReceiptSegments } from "../types.js";
 import type { X402Quote } from "../x402/facilitator.js";
@@ -23,6 +24,12 @@ export const payInput = {
   quoteAmount: z.string().describe("Quoted amount in USDC from the 402 response"),
   quoteHash: z.string().describe("Canonical hash of the original 402 response"),
   endpoint: z.string().describe("API endpoint being called"),
+  responseBody: z
+    .string()
+    .optional()
+    .describe(
+      "Body the agent received for this payment. Recorded as a hash and a byte size so the receipt covers delivery; never stored verbatim.",
+    ),
 };
 
 export const payInputSchema = z.object(payInput);
@@ -183,8 +190,13 @@ export async function handlePay(
   const payment = await services.payments.pay(quote);
 
   const segments = buildSegments(input, policyResults, mandate.issuer, policyIntersection);
-  segments.tx = { txHash: payment.txHash, chainId: payment.chainId };
-  segments.delivery = { payloadHash: payment.txHash };
+  segments.tx = { txHash: payment.txHash, chainId: payment.chainId, payer: payment.payer };
+  if (input.responseBody !== undefined) {
+    segments.delivery = {
+      payloadHash: contentHash(input.responseBody),
+      payloadSize: Buffer.byteLength(input.responseBody, "utf8"),
+    };
+  }
 
   const receipt = buildReceipt({
     agentId: mandate.agentId,

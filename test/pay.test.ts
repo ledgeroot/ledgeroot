@@ -2,6 +2,7 @@ import { rmSync } from "node:fs";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
 import { handlePay } from "../src/tools/pay.js";
+import { contentHash } from "../src/receipt/hashchain.js";
 import { PolicyEngine } from "../src/policy/engine.js";
 import { defaultPolicies } from "../src/policy/defaults.js";
 import type { Mandate } from "../src/types.js";
@@ -26,7 +27,11 @@ function mandate(overrides: Partial<Mandate> = {}): Mandate {
 function makeServices(store: LedgerootStore) {
   const engine = new PolicyEngine();
   for (const policy of defaultPolicies()) engine.register(policy);
-  const pay = vi.fn(async () => ({ txHash: "0xtx", chainId: 10143 }));
+  const pay = vi.fn(async () => ({
+    txHash: "0xsettlementtx",
+    chainId: 10143,
+    payer: "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A",
+  }));
   return {
     store,
     engine,
@@ -90,5 +95,51 @@ describe("handlePay idempotency and taskId", () => {
     expect(byTask[0].id).toBe(result.receiptId);
 
     store.close();
+  });
+});
+
+describe("receipt segments", () => {
+  async function payWith(input: Record<string, unknown>) {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate());
+    const result = await handlePay(makeServices(store), payInput(input));
+    const receipt = store.getReceipt(result.receiptId);
+    store.close();
+    return receipt;
+  }
+
+  it("records the settlement transaction and its payer", async () => {
+    const receipt = await payWith({});
+    expect(receipt?.segments.tx).toEqual({
+      txHash: "0xsettlementtx",
+      chainId: 10143,
+      payer: "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A",
+    });
+  });
+
+  it("records the hash and size of the reported response body", async () => {
+    const body = JSON.stringify({ result: "42" });
+    const receipt = await payWith({ responseBody: body });
+
+    expect(receipt?.segments.delivery).toEqual({
+      payloadHash: contentHash(body),
+      payloadSize: Buffer.byteLength(body, "utf8"),
+    });
+    // Segment 6 describes the payload, not the payment. The transaction hash
+    // belongs to segment 5.
+    expect(receipt?.segments.delivery.payloadHash).not.toBe(receipt?.segments.tx.txHash);
+  });
+
+  it("leaves delivery empty when the caller reports no response body", async () => {
+    const receipt = await payWith({});
+    expect(receipt?.segments.delivery).toEqual({});
+  });
+
+  it("changes the delivery hash when the body changes", async () => {
+    const first = await payWith({ responseBody: "{}" });
+    const second = await payWith({ responseBody: '{"a":1}' });
+    expect(first?.segments.delivery.payloadHash).not.toBe(
+      second?.segments.delivery.payloadHash,
+    );
   });
 });

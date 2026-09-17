@@ -48,9 +48,13 @@ export interface ReceiptSegments {
   /** 4. Call — per-policy evaluation results. */
   call: { policyResults: Array<{ policyId: string; decision: PolicyDecision }> };
   /** 5. Transaction — on-chain settlement. */
-  tx: { txHash?: string; chainId?: number };
-  /** 6. Delivery — proof the purchased resource was delivered. */
-  delivery: { proof?: string; payloadHash?: string };
+  tx: { txHash?: string; chainId?: number; payer?: string };
+  /**
+   * 6. Delivery — what the agent actually received for the payment, recorded
+   * only when the caller reports the response body. Ledgeroot settles the
+   * payment; it does not fetch the resource itself.
+   */
+  delivery: { payloadHash?: string; payloadSize?: number };
 }
 
 export type ReceiptStatus = "paid" | "denied";

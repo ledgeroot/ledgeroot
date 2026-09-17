@@ -12,3 +12,12 @@ export function canonicalHash(value: unknown): string {
   }
   return createHash("sha256").update(json).digest("hex");
 }
+
+/**
+ * SHA-256 over raw bytes, returned as lowercase hex. Use this for content that
+ * is not canonical JSON — a response body as the agent received it — where
+ * re-serialising would change the bytes being committed to.
+ */
+export function contentHash(value: string | Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}

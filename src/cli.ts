@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loadEnv } from "./env.js";
 import { createServices } from "./bootstrap.js";
-import { anchor, exportEvidence, verify } from "./tools/receipts.js";
+import { anchor, exportEvidence, verify, verifyOnChain } from "./tools/receipts.js";
 import { serveMCP } from "./mcp.js";
 
 loadEnv();
@@ -16,7 +16,9 @@ function flag(name: string): string | undefined {
 const USAGE = `ledgeroot — evidence engine for agent x402 payments
 
 Usage:
-  ledgeroot verify [--db <path>]   Offline verification of the receipt chain + anchor
+  ledgeroot verify [--db <path>] [--check-chain]
+                                   Offline verification of the receipt chain + anchor
+                                   --check-chain also confirms each settlement via RPC
   ledgeroot export [--db <path>]   Export the evidence bundle as JSON
   ledgeroot anchor [--db <path>]   Submit the epoch Merkle root on-chain
   ledgeroot serve                  Start the MCP server over stdio
@@ -32,7 +34,13 @@ async function main(): Promise<void> {
   try {
     switch (command) {
       case "verify":
-        console.log(JSON.stringify(verify(services), null, 2));
+        console.log(
+          JSON.stringify(
+            args.includes("--check-chain") ? await verifyOnChain(services) : verify(services),
+            null,
+            2,
+          ),
+        );
         break;
       case "export":
         console.log(JSON.stringify(exportEvidence(services), null, 2));

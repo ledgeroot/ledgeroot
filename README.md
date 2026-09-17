@@ -29,8 +29,10 @@ Ledgeroot 的三层架构与 MAS SAFR 白皮书的三个运行时保障功能一
 `意图 → 授权 → 计划 → 调用 → 交易哈希 → 交付凭证`
 
 - 段间由 RFC 8785 哈希链互锁（每张收据回指上一张的 `receiptHash`）
-- epoch Merkle 根由 25 行锚定合约提交上链
+- epoch Merkle 根由 25 行锚定合约提交上链；锚定记录该根覆盖的收据数，因此之后新增支付不会让校验误报
+- 第六段只在调用方回报响应体时写入（`ledgeroot_pay` 的 `responseBody`），只存哈希与字节数，不存原文
 - `npx ledgeroot verify` 离线三态验证（`verified / tampered / incomplete`），不经过任何服务器
+- `npx ledgeroot verify --check-chain` 额外按 `txHash` 拉链上交易，比对 USDC 合约、付款方、收款方与金额；节点不可达时报 `incomplete` 而非 `tampered`
 
 ## 五条默认策略（fail-closed）
 
@@ -44,14 +46,14 @@ Ledgeroot 的三层架构与 MAS SAFR 白皮书的三个运行时保障功能一
 
 | 工具 | 作用 |
 |---|---|
-| `ledgeroot_pay` | 受约束 x402 支付（幂等去重 + 任务关联），出六段收据 |
+| `ledgeroot_pay` | 受约束 x402 支付（幂等去重 + 任务关联），出六段收据；传 `responseBody` 可让第六段覆盖交付 |
 | `ledgeroot_mandate_sign` | 本地私钥现场签发授权令 |
 | `ledgeroot_mandate_import` | 导入 AP2 风格授权令 |
 | `ledgeroot_mandate_list` | 列出有效授权 |
 | `ledgeroot_mandate_revoke` | 撤销授权（一键熔断） |
 | `ledgeroot_receipt_list` | 列出收据 |
 | `ledgeroot_receipt_get` | 取单张收据 |
-| `ledgeroot_verify` | 离线验证证据链 + 锚定 |
+| `ledgeroot_verify` | 离线验证证据链 + 锚定；置 `checkChain` 可额外核对链上结算 |
 | `ledgeroot_anchor` | 提交 epoch Merkle 根上链 |
 | `ledgeroot_export` | 导出证据包 |
 

@@ -14,10 +14,12 @@ import {
   listReceipts,
   getReceipt,
   verify,
+  verifyOnChain,
   anchor,
   exportEvidence,
   receiptListInput,
   receiptGetInput,
+  verifyInput,
 } from "./receipts.js";
 
 function text(payload: unknown) {
@@ -106,9 +108,11 @@ export function createToolRouter(server: McpServer, services: LedgerootServices)
     {
       title: "Verify evidence",
       description:
-        "Offline verification of the receipt chain and on-chain anchor. No server is involved.",
+        "Offline verification of the receipt chain and on-chain anchor. No server is involved. Set checkChain to also confirm each paid receipt's settlement against the chain via RPC.",
+      inputSchema: verifyInput,
     },
-    () => text(verify(services)),
+    async (args) =>
+      text(args.checkChain ? await verifyOnChain(services) : verify(services)),
   );
 
   server.registerTool(

@@ -41,7 +41,7 @@ describe("FacilitatorClient", () => {
 
     const result = await client(TEST_KEY).pay(quote);
 
-    expect(result).toEqual({ txHash: "0xtxhash", chainId: 10143 });
+    expect(result).toMatchObject({ txHash: "0xtxhash", chainId: 10143 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0][0]).toBe("https://facilitator.test/verify");
     expect(fetchMock.mock.calls[1][0]).toBe("https://facilitator.test/settle");
@@ -58,6 +58,10 @@ describe("FacilitatorClient", () => {
     expect(paymentPayload.accepted.payTo).toBe(PAY_TO);
     expect(paymentPayload.payload.authorization.from).toBeTruthy();
     expect(paymentPayload.payload.signature).toMatch(/^0x/);
+
+    // The payer is the account that signed the authorization, which is what
+    // lets a receipt's settlement be checked against the chain's `from`.
+    expect(result.payer).toBe(paymentPayload.payload.authorization.from);
 
     expect(paymentRequirements.scheme).toBe("exact");
     expect(paymentRequirements.network).toBe("eip155:10143");
