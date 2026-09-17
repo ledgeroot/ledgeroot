@@ -28,7 +28,7 @@ Ledgeroot 是「机芯 + 仪表盘」双件结构的**机芯**。仪表盘见 [m
 
 | 工具 | 作用 |
 |---|---|
-| `ledgeroot_pay` | 受约束的 x402 支付，出六段收据 |
+| `ledgeroot_pay` | 受约束 x402 支付（幂等去重 + 任务关联），出六段收据 |
 | `ledgeroot_mandate_sign` | 本地私钥现场签发授权令 |
 | `ledgeroot_mandate_import` | 导入 AP2 风格授权令 |
 | `ledgeroot_mandate_list` | 列出有效授权 |
@@ -38,6 +38,15 @@ Ledgeroot 是「机芯 + 仪表盘」双件结构的**机芯**。仪表盘见 [m
 | `ledgeroot_verify` | 离线验证证据链 + 锚定 |
 | `ledgeroot_anchor` | 提交 epoch Merkle 根上链 |
 | `ledgeroot_export` | 导出证据包 |
+
+## 幂等与任务关联
+
+`ledgeroot_pay` 接受两个可选关联键：
+
+- `requestId`（幂等去重）——同一个 `requestId` 重试时，直接返回**已有收据**（`deduplicated: true`），不会二次扣款。去重是查本地 append-only 账本，而不是查链。
+- `taskId`（意图链）——把多笔支付归到同一个用户任务下；仪表盘按任务聚合展示「N 笔 / 总额 / 拦截数」。
+
+这两层补上了支付原语（x402）回答不了的问题：**「重试先查原交易」** 和 **「这笔钱属于哪次任务」**。
 
 ## 快速开始
 
@@ -62,6 +71,7 @@ node dist/cli.js serve
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC（默认 `https://testnet-rpc.monad.xyz`） |
 | `LEDGEROOT_ANCHOR_ADDRESS` | 锚定合约地址（未设置则锚定离线） |
 | `LEDGEROOT_PRIVATE_KEY` | 支付 + 锚定签名私钥（永不出本机） |
+| `LEDGEROOT_DRY_RUN` | 设为 `true` 启用仿真：零钱包零 USDC 跑全流程（假 tx + 一次性私钥） |
 
 ## 在 Claude Code 中使用
 
@@ -83,6 +93,14 @@ claude mcp add ledgeroot \
 4. **审计**：说「查收据 / 验证证据」→ `ledgeroot_receipt_list` / `ledgeroot_verify`。
 
 > 自然语言解析由宿主（Claude）完成，ledgeroot 只提供结构化、确定性的工具；私钥通过 `--env` 传入，永不出本机。
+
+## 仿真演示（dry-run，零门槛）
+
+不用钱包、不用 USDC、不用网络，一条命令跑完整闭环（签发 → 支付 → 幂等重试 → 注入拦截 → 熔断 → 离线验证）：
+
+```bash
+LEDGEROOT_DRY_RUN=true npm run demo
+```
 
 ## 真实支付演示（Monad testnet）
 
@@ -143,6 +161,10 @@ src/
   wallet/    本地密钥库 / 外部钱包适配
   x402/      facilitator HTTP 集成点
   tools/     十个 ledgeroot_* MCP 工具
+  env.ts     环境加载 + dry-run 开关
+  mandate.ts EIP-712 授权令（签发 / 验签 / 取交集）
+  consistency.ts 授权-执行一致性分析
+scripts/     demo（全流程演示）/ pay-demo / deploy
 contracts/   LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/      Monad testnet 部署配置
 ```
