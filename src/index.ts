@@ -11,6 +11,7 @@ export * from "./receipt/builder.js";
 export * from "./anchor/merkle.js";
 export * from "./anchor/anchorer.js";
 export * from "./verify/verifier.js";
+export * from "./consistency.js";
 export * from "./store/db.js";
 export * from "./wallet/adapter.js";
 export * from "./x402/facilitator.js";
