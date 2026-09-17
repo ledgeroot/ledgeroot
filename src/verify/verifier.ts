@@ -4,22 +4,45 @@ import { merkleRoot } from "../anchor/merkle.js";
 
 export type VerificationStatus = "verified" | "tampered" | "incomplete";
 
+/**
+ * Why a check failed. `tampered` means bytes were checked and do not match;
+ * `incomplete` means evidence is missing or could not be obtained. Keeping the
+ * two apart stops missing data from being reported as an attack, and stops an
+ * attack from being excused as missing data.
+ */
+export type IssueKind = "tampered" | "incomplete";
+
+export interface Issue {
+  kind: IssueKind;
+  message: string;
+}
+
 export interface VerificationResult {
   status: VerificationStatus;
-  errors: string[];
+  issues: Issue[];
 }
 
-/** Three-state verification: verified / tampered / incomplete. */
-export function classify(errors: string[]): VerificationStatus {
-  return errors.length === 0 ? "verified" : "tampered";
+const tampered = (message: string): Issue => ({ kind: "tampered", message });
+const incomplete = (message: string): Issue => ({ kind: "incomplete", message });
+
+/** A definite mismatch outranks missing evidence. */
+export function classify(issues: Issue[]): VerificationStatus {
+  if (issues.some((issue) => issue.kind === "tampered")) return "tampered";
+  return issues.length > 0 ? "incomplete" : "verified";
 }
 
-function verifyReceiptSelf(receipt: Receipt): string[] {
-  const errors: string[] = [];
-  if (recomputeReceiptHash(receipt) !== receipt.receiptHash) {
-    errors.push(`receipt ${receipt.id}: self hash mismatch`);
-  }
-  return errors;
+function result(issues: Issue[]): VerificationResult {
+  return { status: classify(issues), issues };
+}
+
+function verifyReceiptSelf(receipt: Receipt): Issue[] {
+  if (recomputeReceiptHash(receipt) === receipt.receiptHash) return [];
+  return [tampered(`receipt ${receipt.id}: self hash mismatch`)];
+}
+
+function verifySettlement(receipt: Receipt): Issue[] {
+  if (receipt.status !== "paid" || receipt.segments.tx.txHash) return [];
+  return [incomplete(`receipt ${receipt.id}: paid receipt missing transaction hash`)];
 }
 
 /**
@@ -27,56 +50,70 @@ function verifyReceiptSelf(receipt: Receipt): string[] {
  * surrounding chain, so an individual exported receipt can be checked alone.
  */
 export function verifyReceipt(receipt: Receipt): VerificationResult {
-  const errors = verifyReceiptSelf(receipt);
-  if (receipt.status === "paid" && !receipt.segments.tx.txHash) {
-    errors.push(`receipt ${receipt.id}: paid receipt missing transaction hash`);
-  }
-  return { status: classify(errors), errors };
+  return result([...verifyReceiptSelf(receipt), ...verifySettlement(receipt)]);
 }
 
 /**
  * Verify a full append-only receipt chain:
  *  - every receipt's self hash matches its content (tampered otherwise)
- *  - back-pointers link receipt N to receipt N-1 (tampered otherwise)
+ *  - each receipt's back-pointer names the previous one (tampered otherwise)
+ *  - the first receipt points nowhere (tampered otherwise)
  *  - paid receipts carry a tx hash (incomplete otherwise)
  */
 export function verifyReceiptChain(receipts: Receipt[]): VerificationResult {
-  const errors: string[] = [];
-  for (let i = 0; i < receipts.length; i++) {
-    const receipt = receipts[i];
-    errors.push(...verifyReceiptSelf(receipt));
-    if (i === 0) {
+  const issues: Issue[] = [];
+  receipts.forEach((receipt, index) => {
+    issues.push(...verifyReceiptSelf(receipt), ...verifySettlement(receipt));
+    if (index === 0) {
       if (receipt.prevHash) {
-        errors.push(`receipt ${receipt.id}: first receipt should not have a prevHash`);
+        issues.push(tampered(`receipt ${receipt.id}: first receipt should not have a prevHash`));
       }
-    } else {
-      const prev = receipts[i - 1];
-      if (receipt.prevHash !== prev.receiptHash) {
-        errors.push(`receipt ${receipt.id}: prevHash does not match previous receipt`);
-      }
+    } else if (receipt.prevHash !== receipts[index - 1].receiptHash) {
+      issues.push(tampered(`receipt ${receipt.id}: prevHash does not match previous receipt`));
     }
-    if (receipt.status === "paid" && !receipt.segments.tx.txHash) {
-      errors.push(`receipt ${receipt.id}: paid receipt missing transaction hash`);
-    }
-  }
-  return { status: classify(errors), errors };
+  });
+  return result(issues);
 }
 
 /**
- * Verify a set of receipts against an on-chain epoch Merkle root.
- * Returns "verified" when the locally recomputed root matches the anchor,
- * "tampered" when it differs, "incomplete" when receipts are missing hashes.
+ * Verify receipts against an on-chain epoch root.
+ *
+ * An epoch covers a prefix of the ledger: `receiptCount` is how many receipts
+ * existed when the root was anchored. Recomputed against the whole ledger, the
+ * root would stop matching the moment one more payment arrived, so the epoch is
+ * sliced back to its boundary. Receipts appended after the anchor are expected
+ * and are covered by the next epoch.
+ *
+ * Pass `null` for an anchor recorded before boundaries were tracked; its root
+ * cannot be checked, which is incomplete rather than tampered.
  */
-export function verifyAnchor(receipts: Receipt[], anchoredRoot: string): VerificationResult {
-  const errors: string[] = [];
-  for (const receipt of receipts) {
-    errors.push(...verifyReceiptSelf(receipt));
+export function verifyAnchor(
+  receipts: Receipt[],
+  anchoredRoot: string,
+  receiptCount: number | null,
+): VerificationResult {
+  const issues: Issue[] = receipts.flatMap(verifyReceiptSelf);
+
+  if (receiptCount === null) {
+    issues.push(incomplete("anchor records no receipt boundary; re-anchor to verify it"));
+    return result(issues);
   }
-  const recomputed = merkleRoot(receipts.map((r) => r.receiptHash));
+
+  if (receipts.length < receiptCount) {
+    issues.push(
+      tampered(
+        `anchored epoch covers ${receiptCount} receipts but only ${receipts.length} are present`,
+      ),
+    );
+    return result(issues);
+  }
+
+  const epoch = receipts.slice(0, receiptCount);
+  const recomputed = merkleRoot(epoch.map((receipt) => receipt.receiptHash));
   if (recomputed !== anchoredRoot) {
-    errors.push(
-      `recomputed epoch root ${recomputed} does not match anchored root ${anchoredRoot}`,
+    issues.push(
+      tampered(`recomputed epoch root ${recomputed} does not match anchored root ${anchoredRoot}`),
     );
   }
-  return { status: classify(errors), errors };
+  return result(issues);
 }

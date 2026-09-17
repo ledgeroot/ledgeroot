@@ -1,9 +1,10 @@
 import { rmSync } from "node:fs";
 import { afterEach, describe, it, expect } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
-import { anchor } from "../src/tools/receipts.js";
+import { anchor, verify } from "../src/tools/receipts.js";
 import { buildReceipt } from "../src/receipt/builder.js";
 import { epochRoot } from "../src/anchor/anchorer.js";
+import { verifyAnchor } from "../src/verify/verifier.js";
 import type { LedgerootServices } from "../src/context.js";
 import type { ReceiptSegments } from "../src/types.js";
 
@@ -27,6 +28,11 @@ function fakeAnchorer(txHash = "0xfaketx") {
   };
 }
 
+/** A denied receipt, so it carries no tx hash and never reads as incomplete. */
+function denied(reason: string, prevHash?: string) {
+  return buildReceipt({ status: "denied", reason, segments: segments(), prevHash });
+}
+
 afterEach(() => {
   for (const suffix of ["", "-wal", "-shm"]) {
     rmSync(DB + suffix, { force: true });
@@ -36,13 +42,8 @@ afterEach(() => {
 describe("anchor flow", () => {
   it("submits the epoch root and records the anchor", async () => {
     const store = new LedgerootStore({ path: DB });
-    const a = buildReceipt({ status: "denied", reason: "first", segments: segments() });
-    const b = buildReceipt({
-      status: "denied",
-      reason: "second",
-      segments: segments(),
-      prevHash: a.receiptHash,
-    });
+    const a = denied("first");
+    const b = denied("second", a.receiptHash);
     // No timestamp pinning: the store orders receipts by append sequence, so
     // the epoch root is reproducible even when both land in the same
     // millisecond (buildReceipt uses Date.now()).
@@ -68,6 +69,7 @@ describe("anchor flow", () => {
     expect(latest?.root).toBe(epochRoot([a, b]));
     expect(latest?.epoch).toBe(1);
     expect(latest?.txHash).toBe("0xfaketx");
+    expect(latest?.receiptCount).toBe(2);
 
     store.close();
   });
@@ -78,5 +80,43 @@ describe("anchor flow", () => {
     const result = await anchor(services);
     expect(result.anchored).toBe(false);
     store.close();
+  });
+
+  it("stays verified when a receipt is appended after anchoring", async () => {
+    const store = new LedgerootStore({ path: DB });
+    const a = denied("anchored");
+    store.appendReceipt(a);
+
+    const services = {
+      store,
+      anchorer: fakeAnchorer(),
+    } as unknown as LedgerootServices;
+    await anchor(services);
+
+    // The epoch root covers only `a`; `b` arrives afterwards. Verifying against
+    // the whole ledger instead of the epoch would call this a mismatch.
+    store.appendReceipt(denied("after the anchor", a.receiptHash));
+
+    const result = verify(services);
+    expect(result.status).toBe("verified");
+    expect(result.issues).toEqual([]);
+    expect(result.receiptCount).toBe(2);
+    expect(result.anchor?.receiptCount).toBe(1);
+    expect(result.anchor?.status).toBe("verified");
+    store.close();
+  });
+
+  it("cannot check an anchor that records no receipt boundary", () => {
+    const a = denied("anchored");
+    // A root with no boundary might cover any prefix, so it is unverifiable —
+    // incomplete rather than a false verdict either way.
+    expect(verifyAnchor([a], epochRoot([a]), null).status).toBe("incomplete");
+  });
+
+  it("reports anchored receipts going missing as tampering", () => {
+    const a = denied("anchored");
+    expect(verifyAnchor([a], epochRoot([a, denied("second", a.receiptHash)]), 2).status).toBe(
+      "tampered",
+    );
   });
 });

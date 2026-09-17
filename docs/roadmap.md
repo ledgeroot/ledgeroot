@@ -150,6 +150,11 @@
 
 ### P0-3. 修 `classify()`，让 `incomplete` 真正可达
 
+> ✅ **已完成（2026-09-17）**。
+> 实现：`VerificationResult` 由 `errors: string[]` 改为 `issues: Issue[]`，其中 `Issue = { kind: "tampered" | "incomplete", message }`。`classify()` 按 kind 判定，**`tampered` 优先于 `incomplete`**。
+> 语义划分：自哈希不匹配 / prevHash 断链 / 首张带 prevHash / 根不匹配 / 已锚定收据缺失 → `tampered`；缺 txHash / 锚定无边界 → `incomplete`。
+> 验证：新增两个用例——"缺 txHash 报 incomplete 而非 tampered"、"同时被改且缺证据时 tampered 优先"。**README 里"离线三态验证"的说法至此才真正成立。**
+
 - **为什么**：D3。README 宣称三态，代码只有两态，且语义错误。
 - **做什么**：区分三类
   - `verified` —— 全部检查通过
@@ -158,8 +163,15 @@
 - **涉及**：`src/verify/verifier.ts`、`test/receipt.test.ts`
 - **验收**：构造三种用例分别命中三个状态
 - **参考**：Traceipt 的 `ok: true | false | null`，`null` = SKIP，"never silently passed"
+- ⚠️ **破坏性 API 变更**：`VerificationResult.errors` 已移除，改用 `issues`。
 
 ### P0-4. 修锚定后误报篡改
+
+> ✅ **已完成（2026-09-17）**。
+> 实现：`anchors` 表新增 `receipt_count`（该根覆盖多少张收据）；`anchor()` 写入当时的收据数；`verifyAnchor(receipts, root, receiptCount)` **按 epoch 切片**重算，而非拿全量收据。
+> 边界语义：收据数 **少于** `receipt_count` → `tampered`（已锚定的收据缺失，属删除）；`receipt_count` 为 `null`（本列存在之前写入的旧锚定）→ `incomplete`（无法判定，不误报）。
+> 另外：`verify()` 的整体 `status` 现在**汇总链校验与锚定校验**（原先只看链，锚定结果没被计入）。
+> 验证：新增用例——"锚定后追加支付仍 verified"、"无边界锚定报 incomplete"、"已锚定收据缺失报 tampered"、"旧库 anchors 表迁移后边界为 null"，以及旧库 anchors 迁移路径。
 
 - **为什么**：D4。旗舰的"离线验证"当前会在正常使用时误报，这是最容易被现场打脸的 bug。
 - **做什么**：为 epoch 建立边界 —— 记录该 epoch 覆盖的收据范围（数量或时间上界 / 收据 id 列表的哈希），验证时按 epoch 切片比对，而不是拿全量收据

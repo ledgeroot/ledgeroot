@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
+import type { Receipt } from "../types.js";
 import { epochRoot } from "../anchor/anchorer.js";
-import { verifyAnchor, verifyReceiptChain } from "../verify/verifier.js";
+import { classify, verifyAnchor, verifyReceiptChain } from "../verify/verifier.js";
 
 export const receiptListInput = {
   mandateId: z.string().optional(),
@@ -28,22 +29,36 @@ export function getReceipt(services: LedgerootServices, input: ReceiptGetInput) 
   return { found: true, receipt };
 }
 
+/**
+ * Verify the whole ledger: the receipt chain, plus the anchor it commits to
+ * when one exists. The anchor is checked against the epoch it actually covers
+ * rather than the whole ledger, so receipts appended afterwards do not read as
+ * a mismatch. The overall status is the worst of the two.
+ */
+function verifyLedger(services: LedgerootServices, receipts: Receipt[]) {
+  const anchor = services.store.latestAnchor();
+  const anchorResult = anchor
+    ? verifyAnchor(receipts, anchor.root, anchor.receiptCount)
+    : null;
+  const issues = [...verifyReceiptChain(receipts).issues, ...(anchorResult?.issues ?? [])];
+  return { anchor, anchorResult, status: classify(issues), issues };
+}
+
 export function verify(services: LedgerootServices) {
   const receipts = services.store.listReceipts();
-  const chain = verifyReceiptChain(receipts);
-  const anchor = services.store.latestAnchor();
-  const anchorResult = anchor ? verifyAnchor(receipts, anchor.root) : null;
+  const { anchor, anchorResult, status, issues } = verifyLedger(services, receipts);
   return {
-    status: chain.status,
-    errors: chain.errors,
+    status,
+    issues,
     receiptCount: receipts.length,
     anchor: anchor
       ? {
           epoch: anchor.epoch,
           root: anchor.root,
           txHash: anchor.txHash,
+          receiptCount: anchor.receiptCount,
           status: anchorResult?.status,
-          errors: anchorResult?.errors,
+          issues: anchorResult?.issues ?? [],
         }
       : null,
   };
@@ -61,7 +76,7 @@ export async function anchor(services: LedgerootServices) {
   const txHash = await services.anchorer.anchor(root);
   const latest = services.store.latestAnchor();
   const epoch = latest ? latest.epoch + 1 : 1;
-  services.store.recordAnchor(epoch, root, txHash);
+  services.store.recordAnchor(epoch, root, txHash, receipts.length);
   return { anchored: true, epoch, root, txHash, receiptCount: receipts.length };
 }
 
@@ -69,7 +84,7 @@ export function exportEvidence(services: LedgerootServices) {
   const receipts = services.store.listReceipts();
   const root = epochRoot(receipts);
   const anchor = services.store.latestAnchor();
-  const verification = verifyReceiptChain(receipts);
+  const { status, issues } = verifyLedger(services, receipts);
   return {
     bundle: {
       schema: "ledgeroot.evidence.v1",
@@ -77,7 +92,7 @@ export function exportEvidence(services: LedgerootServices) {
       root,
       anchor,
       receipts,
-      verification,
+      verification: { status, issues },
     },
   };
 }

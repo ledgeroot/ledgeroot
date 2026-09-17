@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
 import { buildReceipt } from "../src/receipt/builder.js";
-import { verifyReceiptChain } from "../src/verify/verifier.js";
+import { verifyAnchor, verifyReceiptChain } from "../src/verify/verifier.js";
 import type { Receipt, ReceiptSegments } from "../src/types.js";
 
 const DB = "/tmp/cc-store-test.sqlite";
@@ -71,7 +71,7 @@ describe("receipt ordering", () => {
 
     expect(verifyReceiptChain(store.listReceipts())).toMatchObject({
       status: "verified",
-      errors: [],
+      issues: [],
     });
     store.close();
   });
@@ -126,6 +126,31 @@ describe("store migration", () => {
     const next = buildReceipt({ status: "denied", reason: "after migration", segments: segments() });
     store.appendReceipt(next);
     expect(store.lastReceipt()?.id).toBe(next.id);
+    store.close();
+  });
+
+  it("leaves an anchor written before boundaries existed unverifiable", () => {
+    // A pre-boundary anchors table: the root is recorded, but not how many
+    // receipts it covers, so it cannot be recomputed either way.
+    const legacy = new Database(LEGACY_DB);
+    legacy.exec(`
+      CREATE TABLE anchors (
+        epoch INTEGER PRIMARY KEY,
+        root TEXT NOT NULL,
+        tx_hash TEXT,
+        anchored_at INTEGER NOT NULL
+      );
+      INSERT INTO anchors (epoch, root, anchored_at) VALUES (1, 'deadbeef', 1000);
+    `);
+    legacy.close();
+
+    const store = new LedgerootStore({ path: LEGACY_DB });
+    const anchor = store.latestAnchor();
+    expect(anchor?.receiptCount).toBeNull();
+
+    // Unverifiable, not a false verdict in either direction.
+    const result = verifyAnchor([], anchor?.root ?? "", anchor?.receiptCount ?? null);
+    expect(result.status).toBe("incomplete");
     store.close();
   });
 });

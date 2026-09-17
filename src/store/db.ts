@@ -50,6 +50,7 @@ export class LedgerootStore {
         epoch INTEGER PRIMARY KEY,
         root TEXT NOT NULL,
         tx_hash TEXT,
+        receipt_count INTEGER,
         anchored_at INTEGER NOT NULL
       );
     `);
@@ -59,22 +60,37 @@ export class LedgerootStore {
   /**
    * Bring a database written by an earlier version up to date.
    *
-   * Receipts used to be ordered by `created_at` with `id` as the tie-break.
-   * `id` is a content hash, so two receipts written in the same millisecond
-   * could come back in an order that did not match the hash chain — which made
-   * chain verification report `tampered` on an untouched ledger, and made the
-   * epoch Merkle root depend on which order the store happened to return.
+   * `receipts.seq`: receipts used to be ordered by `created_at` with `id` as
+   * the tie-break. `id` is a content hash, so two receipts written in the same
+   * millisecond could come back in an order that did not match the hash chain,
+   * which made chain verification report `tampered` on an untouched ledger.
    * `seq` is the append order and is now the only ordering key.
+   *
+   * `anchors.receipt_count`: an epoch root covers the receipts that existed
+   * when it was submitted. Without that boundary recorded, verification has to
+   * recompute over the whole ledger and reports a mismatch as soon as one more
+   * payment arrives. Rows written before this column existed keep NULL, which
+   * verifies as `incomplete` rather than a false `tampered`.
    */
   private migrate(): void {
-    const columns = this.db.prepare("PRAGMA table_info(receipts)").all() as Array<{
+    if (!this.hasColumn("receipts", "seq")) {
+      this.db.exec("ALTER TABLE receipts ADD COLUMN seq INTEGER NOT NULL DEFAULT 0");
+      this.backfillReceiptSequence();
+    }
+    if (!this.hasColumn("anchors", "receipt_count")) {
+      this.db.exec("ALTER TABLE anchors ADD COLUMN receipt_count INTEGER");
+    }
+  }
+
+  private hasColumn(table: string, column: string): boolean {
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
       name: string;
     }>;
-    if (columns.some((column) => column.name === "seq")) return;
+    return columns.some((entry) => entry.name === column);
+  }
 
-    this.db.exec("ALTER TABLE receipts ADD COLUMN seq INTEGER NOT NULL DEFAULT 0");
-    // rowid is the only append-order signal available for rows written before
-    // `seq` existed.
+  /** rowid is the only append-order signal for rows written before `seq`. */
+  private backfillReceiptSequence(): void {
     const rows = this.db.prepare("SELECT rowid AS rid FROM receipts ORDER BY rowid").all() as Array<{
       rid: number;
     }>;
@@ -196,18 +212,34 @@ export class LedgerootStore {
     return row ? (JSON.parse(row.mandate_json) as Mandate) : null;
   }
 
-  recordAnchor(epoch: number, root: string, txHash?: string): void {
+  /** Record an anchor along with how many receipts its root covers. */
+  recordAnchor(epoch: number, root: string, txHash: string | undefined, receiptCount: number): void {
     this.db
-      .prepare("INSERT INTO anchors (epoch, root, tx_hash, anchored_at) VALUES (?, ?, ?, ?)")
-      .run(epoch, root, txHash ?? null, Date.now());
+      .prepare(
+        "INSERT INTO anchors (epoch, root, tx_hash, receipt_count, anchored_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(epoch, root, txHash ?? null, receiptCount, Date.now());
   }
 
-  latestAnchor(): { epoch: number; root: string; txHash?: string } | null {
+  latestAnchor(): {
+    epoch: number;
+    root: string;
+    txHash?: string;
+    /** Receipts covered by this root; null for anchors predating boundaries. */
+    receiptCount: number | null;
+  } | null {
     const row = this.db
-      .prepare("SELECT epoch, root, tx_hash FROM anchors ORDER BY epoch DESC LIMIT 1")
-      .get() as { epoch: number; root: string; tx_hash: string | null } | undefined;
+      .prepare("SELECT epoch, root, tx_hash, receipt_count FROM anchors ORDER BY epoch DESC LIMIT 1")
+      .get() as
+      | { epoch: number; root: string; tx_hash: string | null; receipt_count: number | null }
+      | undefined;
     if (!row) return null;
-    return { epoch: row.epoch, root: row.root, txHash: row.tx_hash ?? undefined };
+    return {
+      epoch: row.epoch,
+      root: row.root,
+      txHash: row.tx_hash ?? undefined,
+      receiptCount: row.receipt_count,
+    };
   }
 
   close(): void {

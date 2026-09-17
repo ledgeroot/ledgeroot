@@ -42,4 +42,22 @@ describe("receipt chain", () => {
     const broken = { ...b, prevHash: "0".repeat(64) };
     expect(verifyReceiptChain([a, broken]).status).toBe("tampered");
   });
+
+  it("reports a paid receipt with no tx hash as incomplete, not tampered", () => {
+    const receipt = buildReceipt({ status: "paid", segments: segments() });
+    const result = verifyReceipt(receipt);
+    expect(result.status).toBe("incomplete");
+    expect(result.issues).toEqual([
+      { kind: "incomplete", message: expect.stringContaining("missing transaction hash") },
+    ]);
+  });
+
+  it("lets a definite mismatch outrank missing evidence", () => {
+    // Same receipt, now both tampered (content no longer matches its hash) and
+    // incomplete (still no tx hash). The status must not soften to incomplete.
+    const receipt = buildReceipt({ status: "paid", segments: segments() });
+    const result = verifyReceipt({ ...receipt, reason: "edited" });
+    expect(result.status).toBe("tampered");
+    expect(result.issues.map((issue) => issue.kind).sort()).toEqual(["incomplete", "tampered"]);
+  });
 });
