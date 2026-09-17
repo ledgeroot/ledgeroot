@@ -1,5 +1,7 @@
 # Ledgeroot
 
+> **行业造好了锁，没人造钥匙圈；造好了刹车，没人造黑匣子。**
+
 MCP 支付插件 + 证据引擎。装进 Claude Code / opencode 等任意 MCP 宿主，agent 即获得受约束的 x402 支付能力：每笔支付执行前经过策略校验（fail-closed），执行后自动生成六段式审计收据，epoch Merkle 根上链锚定。拒付尝试同样留痕。
 
 > **Every agent payment, on the record.**
