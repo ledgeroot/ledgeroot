@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "MCP payment plugin and evidence engine for agent x402 payments. Every agent payment, on the record.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ledgeroot/ledgeroot.git"
+  },
+  "homepage": "https://github.com/ledgeroot/ledgeroot#readme",
+  "bugs": {
+    "url": "https://github.com/ledgeroot/ledgeroot/issues"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -36,7 +44,7 @@
   },
   "files": [
     "dist",
-    "contracts",
+    "contracts/src",
     "README.md",
     "LICENSE"
   ],
@@ -46,6 +54,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build && npm test",
     "dev": "tsc -p tsconfig.json --watch",
     "start": "node dist/server.js",
     "test": "vitest run",
