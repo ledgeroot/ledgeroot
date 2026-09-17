@@ -10,6 +10,20 @@ Ledgeroot 是「机芯 + 仪表盘」双件结构的**机芯**。仪表盘见 [m
 
 ---
 
+## SAFR 对齐（MAS《Safeguards for Agentic Finance at Runtime》）
+
+Ledgeroot 的三层架构与 MAS SAFR 白皮书的三个运行时保障功能一一对应——我们在没有看到这份文档之前就独立实现了同一套架构：
+
+| SAFR 功能 | Ledgeroot 实现 |
+|---|---|
+| 身份与权限（establish agent's identity and authority） | mandate（EIP-712 签名授权令）+ `ledgeroot_mandate_sign` |
+| 执行前评估（evaluate agent actions against controls before execution） | 策略引擎（fail-closed，五条默认策略）+ `ledgeroot_pay` 前置校验 |
+| 审计留痕（maintain a clear audit record） | 六段收据 + RFC 8785 哈希链 + epoch Merkle 根上链 + `ledgeroot_verify` 离线三态验证 |
+
+> SAFR 是自愿性框架（2026-07-03 发布）；真正有约束力的是 MAS 即将定稿的 AI 风险管理指南（覆盖 agentic AI）。两层都值得对齐——我们现在就按 SAFR 的三层实现。
+
+---
+
 ## 六段收据
 
 `意图 → 授权 → 计划 → 调用 → 交易哈希 → 交付凭证`
