@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import { mandateSchema } from "../policy/schema.js";
 import { signMandate, verifyMandateSignature } from "../mandate.js";
+import { getPrivateKey } from "../env.js";
 import type { Mandate } from "../types.js";
 
 export const mandateImportInput = {
@@ -60,9 +61,9 @@ export async function mandateSign(
   services: LedgerootServices,
   input: MandateSignInput,
 ): Promise<{ mandateId: string; issuer: string; summary: string }> {
-  const privateKey = process.env.LEDGEROOT_PRIVATE_KEY;
+  const privateKey = getPrivateKey();
   if (!privateKey) {
-    throw new Error("no signer configured (set LEDGEROOT_PRIVATE_KEY)");
+    throw new Error("no signer configured (set LEDGEROOT_PRIVATE_KEY or LEDGEROOT_DRY_RUN=true)");
   }
   const unsigned: Mandate = {
     id: input.id ?? `mandate-${Date.now()}`,

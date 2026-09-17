@@ -3,10 +3,12 @@ import { LedgerootStore } from "./store/db.js";
 import { PolicyEngine } from "./policy/engine.js";
 import { defaultPolicies } from "./policy/defaults.js";
 import {
+  DryRunPaymentProvider,
   FacilitatorClient,
   MONAD_FACILITATOR_URL,
   MONAD_TESTNET_X402,
 } from "./x402/facilitator.js";
+import { getPrivateKey, isDryRun } from "./env.js";
 import { Anchorer } from "./anchor/anchorer.js";
 import { DEFAULT_RPC_URL, monadTestnet } from "./chains.js";
 import type { LedgerootServices } from "./context.js";
@@ -26,11 +28,14 @@ export function createServices(options: BootstrapOptions = {}): LedgerootService
     engine.register(policy);
   }
 
-  const payments = new FacilitatorClient({
-    url: process.env.LEDGEROOT_FACILITATOR_URL ?? MONAD_FACILITATOR_URL,
-    network: MONAD_TESTNET_X402,
-    privateKey: process.env.LEDGEROOT_PRIVATE_KEY,
-  });
+  const privateKey = getPrivateKey();
+  const payments = isDryRun()
+    ? new DryRunPaymentProvider()
+    : new FacilitatorClient({
+        url: process.env.LEDGEROOT_FACILITATOR_URL ?? MONAD_FACILITATOR_URL,
+        network: MONAD_TESTNET_X402,
+        privateKey,
+      });
 
   const anchorAddress = process.env.LEDGEROOT_ANCHOR_ADDRESS;
   const anchorer = anchorAddress
@@ -38,7 +43,7 @@ export function createServices(options: BootstrapOptions = {}): LedgerootService
         chain: monadTestnet,
         rpcUrl: process.env.LEDGEROOT_RPC_URL ?? DEFAULT_RPC_URL,
         contractAddress: anchorAddress as Hex,
-        privateKey: process.env.LEDGEROOT_PRIVATE_KEY,
+        privateKey,
       })
     : undefined;
 

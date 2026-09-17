@@ -59,6 +59,19 @@ export const MONAD_TESTNET_X402: FacilitatorNetworkConfig = {
 /** Monad's official x402 facilitator (public, no API key). */
 export const MONAD_FACILITATOR_URL = "https://x402-facilitator.molandak.org";
 
+/** Deterministic payment provider for dry-run demos — no network, no wallet. */
+export class DryRunPaymentProvider implements PaymentProvider {
+  private sequence = 0;
+
+  async pay(_quote: X402Quote): Promise<PaymentResult> {
+    this.sequence += 1;
+    return {
+      txHash: `0x${this.sequence.toString(16).padStart(64, "0")}`,
+      chainId: MONAD_TESTNET_X402.chainId,
+    };
+  }
+}
+
 export interface FacilitatorConfig {
   url: string;
   network: FacilitatorNetworkConfig;

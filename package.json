@@ -61,7 +61,8 @@
     "verify": "node dist/cli.js verify",
     "anchor": "node dist/cli.js anchor",
     "deploy:monad": "tsx deploy/monad.ts",
-    "demo:pay": "tsx scripts/pay-demo.ts"
+    "demo:pay": "tsx scripts/pay-demo.ts",
+    "demo": "tsx scripts/demo.ts"
   },
   "keywords": [
     "mcp",

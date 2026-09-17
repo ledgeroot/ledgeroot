@@ -12,3 +12,17 @@ export function loadEnv(path = ".env"): void {
     process.loadEnvFile(path);
   }
 }
+
+/** Deterministic throwaway key for dry-run demos (no real credentials). */
+export const DRY_RUN_PRIVATE_KEY = `0x${"1".repeat(64)}`;
+
+/** True when LEDGEROOT_DRY_RUN is "true" or "1". */
+export function isDryRun(): boolean {
+  const value = process.env.LEDGEROOT_DRY_RUN;
+  return value === "true" || value === "1";
+}
+
+/** The configured signer key, falling back to the throwaway key in dry-run. */
+export function getPrivateKey(): string | undefined {
+  return process.env.LEDGEROOT_PRIVATE_KEY ?? (isDryRun() ? DRY_RUN_PRIVATE_KEY : undefined);
+}
