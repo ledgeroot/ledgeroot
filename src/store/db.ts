@@ -49,8 +49,8 @@ export class LedgerootStore {
     this.db.pragma("journal_mode = WAL");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS receipts (
-        seq INTEGER NOT NULL,
-        id TEXT PRIMARY KEY,
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
         prev_hash TEXT,
         status TEXT NOT NULL,
         agent_id TEXT,
@@ -89,11 +89,14 @@ export class LedgerootStore {
   /**
    * Bring a database written by an earlier version up to date.
    *
-   * `receipts.seq`: receipts used to be ordered by `created_at` with `id` as
-   * the tie-break. `id` is a content hash, so two receipts written in the same
-   * millisecond could come back in an order that did not match the hash chain,
-   * which made chain verification report `tampered` on an untouched ledger.
-   * `seq` is the append order and is now the only ordering key.
+   * `receipts.seq`: it used to be a plain column filled in on every insert by
+   * `SELECT COALESCE(MAX(seq), 0) + 1`. That is correct — a single INSERT holds
+   * the write lock, so concurrent writers cannot take the same value — but it
+   * scans the table on every payment, and the table holds the full JSON of
+   * every receipt. Measured cost per insert went from 84 µs at 5k rows to
+   * 5,576 µs at 50k, so it is a cliff, not a slope. Making `seq` the rowid
+   * alias lets SQLite assign it with no scan and guarantees it is unique and
+   * never reused, which also matters once a retention policy starts deleting.
    *
    * `anchors.receipt_count`: an epoch root covers the receipts that existed
    * when it was submitted. Without that boundary recorded, verification has to
@@ -102,10 +105,7 @@ export class LedgerootStore {
    * verifies as `incomplete` rather than a false `tampered`.
    */
   private migrate(): void {
-    if (!this.hasColumn("receipts", "seq")) {
-      this.db.exec("ALTER TABLE receipts ADD COLUMN seq INTEGER NOT NULL DEFAULT 0");
-      this.backfillReceiptSequence();
-    }
+    if (this.receiptsNeedSeqKey()) this.rebuildReceipts();
     if (!this.hasColumn("anchors", "receipt_count")) {
       this.db.exec("ALTER TABLE anchors ADD COLUMN receipt_count INTEGER");
     }
@@ -114,28 +114,76 @@ export class LedgerootStore {
   private hasColumn(table: string, column: string): boolean {
     const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
       name: string;
+      pk: number;
     }>;
     return columns.some((entry) => entry.name === column);
   }
 
-  /** rowid is the only append-order signal for rows written before `seq`. */
-  private backfillReceiptSequence(): void {
-    const rows = this.db.prepare("SELECT rowid AS rid FROM receipts ORDER BY rowid").all() as Array<{
-      rid: number;
+  /** True when `seq` is not the rowid alias, including when it is absent. */
+  private receiptsNeedSeqKey(): boolean {
+    const columns = this.db.prepare("PRAGMA table_info(receipts)").all() as Array<{
+      name: string;
+      pk: number;
     }>;
-    const setSeq = this.db.prepare("UPDATE receipts SET seq = ? WHERE rowid = ?");
+    const seq = columns.find((column) => column.name === "seq");
+    return !seq || seq.pk !== 1;
+  }
+
+  /**
+   * Rebuild `receipts` around the new key. SQLite cannot retype a primary key
+   * in place, so the table is copied and swapped inside one transaction.
+   *
+   * `seq` values are not copied. They are reassigned in the order the old rows
+   * were appended, which is what the chain actually depends on — `prevHash`
+   * links the receipts, `seq` only orders them — and it repairs any row that
+   * predates the column or carries a duplicated value.
+   */
+  private rebuildReceipts(): void {
+    const order = this.hasColumn("receipts", "seq") ? "ORDER BY seq, rowid" : "ORDER BY rowid";
+    const columns =
+      "id, prev_hash, status, agent_id, mandate_id, request_id, task_id, " +
+      "counterparty, endpoint, amount, reason, receipt_json, created_at";
+
     this.db.transaction(() => {
-      rows.forEach((row, index) => setSeq.run(index + 1, row.rid));
+      this.db.exec(`
+        CREATE TABLE receipts_migrated (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT NOT NULL UNIQUE,
+          prev_hash TEXT,
+          status TEXT NOT NULL,
+          agent_id TEXT,
+          mandate_id TEXT,
+          request_id TEXT,
+          task_id TEXT,
+          counterparty TEXT,
+          endpoint TEXT,
+          amount TEXT,
+          reason TEXT,
+          receipt_json TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+      `);
+      this.db.exec(
+        `INSERT INTO receipts_migrated (${columns}) SELECT ${columns} FROM receipts ${order}`,
+      );
+      this.db.exec("DROP TABLE receipts");
+      this.db.exec("ALTER TABLE receipts_migrated RENAME TO receipts");
     })();
   }
 
+  /**
+   * Append one receipt. `seq` is left to SQLite — it is the rowid alias, so it
+   * is assigned without a scan and is unique and monotonic by construction.
+   * `id` carries the uniqueness check, so a re-append of the same content is
+   * ignored rather than duplicated.
+   */
   appendReceipt(receipt: Receipt): void {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO receipts
-           (seq, id, prev_hash, status, agent_id, mandate_id, request_id, task_id, counterparty, endpoint, amount, reason, receipt_json, created_at)
+           (id, prev_hash, status, agent_id, mandate_id, request_id, task_id, counterparty, endpoint, amount, reason, receipt_json, created_at)
          VALUES
-           ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, @prev_hash, @status, @agent_id, @mandate_id, @request_id, @task_id, @counterparty, @endpoint, @amount, @reason, @receipt_json, @created_at)`,
+           (@id, @prev_hash, @status, @agent_id, @mandate_id, @request_id, @task_id, @counterparty, @endpoint, @amount, @reason, @receipt_json, @created_at)`,
       )
       .run({
         id: receipt.id,

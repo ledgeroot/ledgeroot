@@ -132,6 +132,45 @@ describe("store migration", () => {
     store.close();
   });
 
+  it("rebuilds a table whose seq was a plain column, keeping append order", () => {
+    // The shape written between the seq fix and this one: seq existed, but as an
+    // ordinary column filled in by MAX(seq) + 1 on every insert.
+    const legacy = new Database(LEGACY_DB);
+    legacy.exec(`
+      CREATE TABLE receipts (
+        seq INTEGER NOT NULL,
+        id TEXT PRIMARY KEY,
+        prev_hash TEXT,
+        status TEXT NOT NULL,
+        agent_id TEXT,
+        mandate_id TEXT,
+        request_id TEXT,
+        task_id TEXT,
+        counterparty TEXT,
+        endpoint TEXT,
+        amount TEXT,
+        reason TEXT,
+        receipt_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
+    const insert = legacy.prepare(
+      `INSERT INTO receipts (seq, id, status, receipt_json, created_at)
+       VALUES (?, ?, 'denied', ?, 1000)`,
+    );
+    const first = { id: "ff", receiptHash: "ff", status: "denied", timestamp: 1000, segments: segments() };
+    const second = { id: "00", receiptHash: "00", status: "denied", timestamp: 1000, segments: segments() };
+    // Out of id order, and both carrying seq 1: the rebuild renumbers in append
+    // order rather than trusting a value the old scheme could get wrong.
+    insert.run(1, first.id, JSON.stringify(first));
+    insert.run(1, second.id, JSON.stringify(second));
+    legacy.close();
+
+    const store = new LedgerootStore({ path: LEGACY_DB });
+    expect(store.listReceipts().map((r) => r.id)).toEqual(["ff", "00"]);
+    store.close();
+  });
+
   it("leaves an anchor written before boundaries existed unverifiable", () => {
     // A pre-boundary anchors table: the root is recorded, but not how many
     // receipts it covers, so it cannot be recomputed either way.
@@ -155,5 +194,38 @@ describe("store migration", () => {
     const result = verifyAnchor([], anchor?.root ?? "", anchor?.receiptCount ?? null);
     expect(result.status).toBe("incomplete");
     store.close();
+  });
+});
+
+describe("receipt sequence assignment", () => {
+  it("makes seq the rowid alias so an append does not scan the table", () => {
+    const store = new LedgerootStore({ path: DB });
+    store.close();
+
+    const probe = new Database(DB);
+    const columns = probe.prepare("PRAGMA table_info(receipts)").all() as Array<{
+      name: string;
+      pk: number;
+    }>;
+    probe.close();
+
+    // Not a style preference. While seq was a plain column, every append read
+    // MAX(seq) across a table holding each receipt's full JSON: 84 µs per
+    // insert after 5k rows, 5,576 µs after 50k.
+    expect(columns.find((column) => column.name === "seq")?.pk).toBe(1);
+  });
+
+  it("numbers appends monotonically from one", () => {
+    const store = new LedgerootStore({ path: DB });
+    for (const receipt of chained(4, 1_000)) store.appendReceipt(receipt);
+    store.close();
+
+    const probe = new Database(DB);
+    const seqs = (
+      probe.prepare("SELECT seq FROM receipts ORDER BY seq").all() as Array<{ seq: number }>
+    ).map((row) => row.seq);
+    probe.close();
+
+    expect(seqs).toEqual([1, 2, 3, 4]);
   });
 });

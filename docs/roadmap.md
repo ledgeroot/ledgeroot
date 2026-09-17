@@ -19,8 +19,8 @@
 | 阶段内的取舍 | 说明 |
 |---|---|
 | ✅ ~~**A1 提前到第 0 位**~~ | **已完成（2026-09-17）**：链外 `payment_intents` 占位，动钱之前落库。它原是唯一会在现场现形的 bug——demo 连续快跑正好放大那个窗口 |
-| ⏭ **A2（`seq` 分配）** | 数据完整性；会伪装成 `tampered` 误报。**下一个**。见 [architecture-gaps.md](./architecture-gaps.md) §A2 |
-| ⏭ **D1b（链改配置化）** | 成本低（`FacilitatorNetworkConfig` 类型已就绪），且让测试网 → 主网变成改配置 |
+| ✅ ~~**A2（`seq` 分配）**~~ | **已完成（2026-09-17）**。原判断（撞号）实测不成立；真实问题是每次插入全表扫描——50k 行时 **5.6 ms/笔 → 53 µs** |
+| ⏭ **D1b（链改配置化）** | 成本低（`FacilitatorNetworkConfig` 类型已就绪），且让测试网 → 主网变成改配置。**下一个** |
 | ⏸ **B 类整组（规模问题）** | 索引、批量、分区、聚合——**黑客松后**。见 [architecture-gaps.md](./architecture-gaps.md) §二 |
 | ⏸ **N 系列（竞品对齐项）** | RFC 3161、held-set completeness、单文件验证器——**黑客松后** |
 
@@ -394,9 +394,25 @@ record(services, receipt);                            // :227  ← 收据在这�
 - **涉及**：`src/tools/pay.ts`、`src/store/db.ts`（`pending` 状态与更新路径）、`src/types.ts`（`ReceiptStatus`）、`test/pay.test.ts`
 - **验收**：模拟"结算成功但写库前崩溃"，恢复后重试**不会**重复付款；`verify` 能识别遗留的 `pending` 收据
 
-### P0-10. `seq` 交给 SQLite 分配 ⭐ 新发现（架构评估），高优先
+### P0-10. `seq` 交给 SQLite 分配 ⭐ 新发现（架构评估）
 
-> ⚠️ **D8 的另一个入口。** D8 修好了"同毫秒按内容哈希排序"，但没消除"`seq` 本身可能重复"。详见 [architecture-gaps.md](./architecture-gaps.md) §A2。
+> ✅ **已完成（2026-09-17）。** 实现与基准见 [architecture-gaps.md](./architecture-gaps.md) §A2。
+>
+> ⚠️ **原判断（"跨进程会撞号"）实测不成立。** 那条 `INSERT` 是单条 SQL 语句，SQLite 持有写锁，子查询与插入原子——两个连接交错追加 400 行，`seq` 零重复。
+>
+> **真实问题是性能，而且更严重**：`seq` 上没有索引，`SELECT MAX(seq)` 每次插入都要**扫全表**（而每行都存着完整 `receipt_json`）：
+>
+> | 行数 | 修复前 | 修复后 |
+> |---|---|---|
+> | 5,000 | 84 µs | **41 µs** |
+> | 25,000 | 518 µs | **48 µs** |
+> | 50,000 | **5,576 µs** | **53 µs** |
+>
+> **10 倍数据 → 66 倍单次成本。** 50k 行时每笔支付光插入 5.6 ms，而这是每个 agent 调用都要走的路径。
+>
+> **改法**：`seq` 变成 **rowid 别名**（`INTEGER PRIMARY KEY AUTOINCREMENT`），`id` 降为 `NOT NULL UNIQUE`；SQLite 自己分配，不扫描，且唯一、单调、不复用。主键改型需**重建表**（建→拷→删→改名，一个事务），`seq` 值按追加顺序重编号而不拷贝。旧的 `backfillReceiptSequence()` 已删除。
+>
+> **验证**：新增 3 个用例（中间形态重建保序、`seq` 必须是 rowid 别名、`seq` 从 1 连续）。全库 **88 passed**。
 
 **现状**（`src/store/db.ts` `appendReceipt`）：
 
