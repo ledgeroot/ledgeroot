@@ -202,6 +202,48 @@ export async function handlePay(
     quoteHash: input.quoteHash,
     endpoint: input.endpoint,
   };
+
+  // The rail and this database are not one transaction, so the record has to
+  // start before the money moves. Without this, a crash between settling and
+  // recording leaves the money gone, the receipt unwritten, and — because the
+  // idempotency key lived only in that receipt — a retry that pays a second
+  // time. The claim is released only once the outcome is on disk, so a
+  // requestId that is still claimed means an earlier attempt never got there.
+  // The honest reading of that is "unknown", not "failed": refusing to spend is
+  // recoverable, paying twice is not.
+  //
+  // A caller that passes no requestId gets no such protection, because there is
+  // nothing to key the attempt on. Idempotency has to be asked for.
+  if (
+    input.requestId &&
+    !services.store.beginPaymentIntent(input.requestId, {
+      startedAt: Date.now(),
+      agentId: mandate.agentId,
+      mandateId: mandate.id,
+      counterparty: input.counterparty,
+      endpoint: input.endpoint,
+      payTo: input.payTo,
+      amount: input.amount,
+    })
+  ) {
+    const reason = `request "${input.requestId}" has a payment attempt whose outcome was never recorded; refusing to pay again`;
+    const receipt = buildReceipt({
+      agentId: mandate.agentId,
+      mandateId: mandate.id,
+      requestId: input.requestId,
+      taskId: input.taskId,
+      counterparty: input.counterparty,
+      endpoint: input.endpoint,
+      amount: input.amount,
+      status: "denied",
+      reason,
+      segments: buildSegments(input, policyResults, mandate.issuer, policyIntersection),
+      prevHash,
+    });
+    record(services, receipt);
+    return { status: "denied", receiptId: receipt.id, reason };
+  }
+
   const payment = await services.payments.pay(quote);
 
   const segments = buildSegments(input, policyResults, mandate.issuer, policyIntersection);
@@ -231,5 +273,10 @@ export async function handlePay(
     prevHash,
   });
   record(services, receipt);
+
+  // The outcome is on disk, so the requestId is free again. Any later attempt
+  // with this key replays the receipt rather than reaching the rail.
+  if (input.requestId) services.store.clearPaymentIntent(input.requestId);
+
   return { status: "paid", receiptId: receipt.id, txHash: payment.txHash };
 }

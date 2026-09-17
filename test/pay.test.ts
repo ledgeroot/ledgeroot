@@ -98,6 +98,90 @@ describe("handlePay idempotency and taskId", () => {
   });
 });
 
+describe("unrecorded payment attempts", () => {
+  const intent = {
+    startedAt: 1,
+    mandateId: "m-1",
+    counterparty: "agent402.tools",
+    endpoint: "/search",
+    payTo: "0x35DA8C7a8d2253354925354b436A0422B9618dE4",
+    amount: "0.1",
+  };
+
+  it("refuses to spend against a requestId whose earlier attempt was never recorded", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate());
+    const svc = makeServices(store);
+
+    // What a crash between settling and recording leaves behind: the claim, and
+    // no receipt. Whether that payment settled cannot be known from here, so
+    // the only safe move is to not pay a second time.
+    store.beginPaymentIntent("req-crash", intent);
+
+    const result = await handlePay(svc, payInput({ requestId: "req-crash" }));
+
+    expect(result.status).toBe("denied");
+    expect(result.reason).toContain("never recorded");
+    expect(svc.pay).not.toHaveBeenCalled();
+    // The refusal is itself on the record.
+    expect(store.getReceipt(result.receiptId)?.status).toBe("denied");
+
+    store.close();
+  });
+
+  it("releases the claim once the outcome is recorded", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate());
+    const svc = makeServices(store);
+
+    const first = await handlePay(svc, payInput({ requestId: "req-ok" }));
+    expect(first.status).toBe("paid");
+    expect(store.getPaymentIntent("req-ok")).toBeNull();
+
+    // Claim released and receipt written, so a retry replays rather than
+    // refuses: a successful attempt does not burn the requestId.
+    const second = await handlePay(svc, payInput({ requestId: "req-ok" }));
+    expect(second).toMatchObject({ status: "paid", deduplicated: true });
+    expect(svc.pay).toHaveBeenCalledTimes(1);
+
+    store.close();
+  });
+
+  it("keeps the claim when the rail throws, because the outcome is unknown", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate());
+    const svc = makeServices(store);
+    svc.pay.mockRejectedValueOnce(new Error("facilitator /settle timed out after 30000ms"));
+
+    await expect(handlePay(svc, payInput({ requestId: "req-threw" }))).rejects.toThrow(/timed out/);
+
+    // A failed call is not the same as a payment that did not happen: the
+    // settle response may simply have been lost. Keeping the claim is the
+    // conservative side of that, and it means a retry refuses rather than
+    // risking a second payment. The cost is a requestId that needs a human to
+    // clear when the rail genuinely rejected, which is the cheaper mistake.
+    expect(store.getPaymentIntent("req-threw")).not.toBeNull();
+
+    const retry = await handlePay(svc, payInput({ requestId: "req-threw" }));
+    expect(retry).toMatchObject({ status: "denied" });
+    expect(svc.pay).toHaveBeenCalledTimes(1);
+
+    store.close();
+  });
+
+  it("claims nothing when the caller passes no requestId", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate());
+    const svc = makeServices(store);
+
+    const result = await handlePay(svc, payInput({}));
+    expect(result.status).toBe("paid");
+    expect(store.listReceipts()).toHaveLength(1);
+
+    store.close();
+  });
+});
+
 describe("receipt segments", () => {
   async function payWith(input: Record<string, unknown>) {
     const store = new LedgerootStore({ path: DB });

@@ -18,8 +18,9 @@
 
 | 阶段内的取舍 | 说明 |
 |---|---|
-| ✅ **A1 提前到第 0 位** | 收据先于结算写入。**唯一会在现场现形的 bug**——demo 连续快跑时正好放大这个窗口，崩一次就是"钱扣了没收据" |
-| ✅ **D1b（链改配置化）** | 成本低（`FacilitatorNetworkConfig` 类型已就绪），且让测试网 → 主网变成改配置 |
+| ✅ ~~**A1 提前到第 0 位**~~ | **已完成（2026-09-17）**：链外 `payment_intents` 占位，动钱之前落库。它原是唯一会在现场现形的 bug——demo 连续快跑正好放大那个窗口 |
+| ⏭ **A2（`seq` 分配）** | 数据完整性；会伪装成 `tampered` 误报。**下一个**。见 [architecture-gaps.md](./architecture-gaps.md) §A2 |
+| ⏭ **D1b（链改配置化）** | 成本低（`FacilitatorNetworkConfig` 类型已就绪），且让测试网 → 主网变成改配置 |
 | ⏸ **B 类整组（规模问题）** | 索引、批量、分区、聚合——**黑客松后**。见 [architecture-gaps.md](./architecture-gaps.md) §二 |
 | ⏸ **N 系列（竞品对齐项）** | RFC 3161、held-set completeness、单文件验证器——**黑客松后** |
 
@@ -360,6 +361,14 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 ---
 
 ### P0-9. 收据先于结算写入 ⭐ 新发现（架构评估），最高优先
+
+> ✅ **已完成（2026-09-17）。** 实现与验证见 [architecture-gaps.md](./architecture-gaps.md) §1.1。
+>
+> **实现要点**：链外新增 `payment_intents` 表，在**动钱之前**用 `requestId` 占位；占位失败（说明上一次尝试的结果未被记录）→ **拒付并记一条 denied 收据**；结算成功写库后释放占位。
+>
+> ⚠️ **本节原先的修法（"先写 pending 收据再更新为 paid"）做不到**——`buildReceipt` 把 `id` 定义为内容哈希，改 `status` 就会改哈希，下一张收据的 `prevHash` 会指向不存在的哈希。链是 append-only 的，预写记录只能在链外。
+>
+> **验证**：真实进程死亡（结算后 `exit(9)`，收据未写）→ 新进程用同一 `requestId` 重试 → **轨道未被再次调用**，返回 denied。测试 **85 passed**。
 
 > ⚠️ **与生态位无关也必修。** 这是**丢钱 + 丢证据**，而且丢的正是产品声称要防的事。详见 [architecture-gaps.md](./architecture-gaps.md) §A1。
 

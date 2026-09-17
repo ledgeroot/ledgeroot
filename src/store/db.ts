@@ -14,6 +14,30 @@ export interface ReceiptFilter {
 }
 
 /**
+ * A payment attempt recorded before the money moves.
+ *
+ * This is deliberately not a receipt. A receipt's id is the hash of its
+ * content, so its status cannot change after the fact without changing its
+ * identity — and the next receipt's `prevHash` would then point at a hash that
+ * no longer exists. The chain is append-only, so the pre-flight record lives
+ * outside it, in its own table.
+ *
+ * Its only job is to make the window between settling and recording survivable:
+ * if the process dies in there, the next attempt finds this row, and the row
+ * means "we do not know whether that payment settled".
+ */
+export interface PaymentIntent {
+  /** Unix ms when the attempt began. */
+  startedAt: number;
+  mandateId: string;
+  counterparty: string;
+  endpoint: string;
+  payTo: string;
+  amount: string;
+  agentId?: string;
+}
+
+/**
  * Append-only local store for receipts and mandates. Runs entirely client-side;
  * there is no server. Anchors record the on-chain epoch roots after submission.
  */
@@ -52,6 +76,11 @@ export class LedgerootStore {
         tx_hash TEXT,
         receipt_count INTEGER,
         anchored_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS payment_intents (
+        request_id TEXT PRIMARY KEY,
+        intent_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       );
     `);
     this.migrate();
@@ -147,6 +176,33 @@ export class LedgerootStore {
       )
       .get(requestId) as { receipt_json: string } | undefined;
     return row ? (JSON.parse(row.receipt_json) as Receipt) : null;
+  }
+
+  /**
+   * Claim a requestId before spending against it. Returns false when the id is
+   * already claimed, which means an earlier attempt's outcome was never
+   * recorded — the rail is not transactional with this database, so the honest
+   * reading of that row is "we do not know whether that payment settled".
+   */
+  beginPaymentIntent(requestId: string, intent: PaymentIntent): boolean {
+    const info = this.db
+      .prepare(
+        "INSERT OR IGNORE INTO payment_intents (request_id, intent_json, created_at) VALUES (?, ?, ?)",
+      )
+      .run(requestId, JSON.stringify(intent), Date.now());
+    return info.changes > 0;
+  }
+
+  /** Release a requestId once its outcome has been written down. */
+  clearPaymentIntent(requestId: string): void {
+    this.db.prepare("DELETE FROM payment_intents WHERE request_id = ?").run(requestId);
+  }
+
+  getPaymentIntent(requestId: string): PaymentIntent | null {
+    const row = this.db
+      .prepare("SELECT intent_json FROM payment_intents WHERE request_id = ?")
+      .get(requestId) as { intent_json: string } | undefined;
+    return row ? (JSON.parse(row.intent_json) as PaymentIntent) : null;
   }
 
   listReceipts(filter: ReceiptFilter = {}): Receipt[] {
