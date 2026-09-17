@@ -10,8 +10,8 @@ const KEY = `0x${"3".repeat(64)}`;
 
 function input(overrides: Partial<MandateSignInput> = {}): MandateSignInput {
   return {
-    summary: "allow 5 USDC on xapi.to for 24h",
-    counterpartyAllowlist: ["xapi.to"],
+    summary: "allow 5 USDC on agent402.tools for 24h",
+    counterpartyAllowlist: ["agent402.tools"],
     payTo: [],
     maxAmountPerPayment: "5",
     maxTotalAmount: "5",
@@ -37,7 +37,7 @@ describe("mandateSign tool", () => {
 
     expect(result.mandateId).toBeTruthy();
     expect(result.issuer).not.toBe("");
-    expect(result.summary).toBe("allow 5 USDC on xapi.to for 24h");
+    expect(result.summary).toBe("allow 5 USDC on agent402.tools for 24h");
 
     const stored = store.getMandate(result.mandateId);
     expect(stored).toBeTruthy();

@@ -12,9 +12,9 @@ const DB = "/tmp/cc-pay-test.sqlite";
 function mandate(overrides: Partial<Mandate> = {}): Mandate {
   return {
     id: "m-1",
-    summary: "allow up to 1 USDC per call to xapi.to",
+    summary: "allow up to 1 USDC per call to agent402.tools",
     issuer: "0xissuer",
-    counterpartyAllowlist: ["xapi.to"],
+    counterpartyAllowlist: ["agent402.tools"],
     payTo: ["0x35DA8C7a8d2253354925354b436A0422B9618dE4"],
     maxAmountPerPayment: "1",
     maxTotalAmount: "10",
@@ -39,7 +39,7 @@ function payInput(overrides: Record<string, unknown> = {}) {
   return {
     intent: "buy data",
     mandateId: "m-1",
-    counterparty: "xapi.to",
+    counterparty: "agent402.tools",
     payTo: "0x35DA8C7a8d2253354925354b436A0422B9618dE4",
     amount: "0.1",
     quoteAmount: "0.1",

@@ -26,7 +26,7 @@ try {
     id: "demo-mandate-pay",
     summary: `Allow a single payment of up to 1 USDC to ${payTo}`,
     issuer: "",
-    counterpartyAllowlist: ["xapi.to"],
+    counterpartyAllowlist: ["agent402.tools"],
     payTo: [payTo],
     maxAmountPerPayment: "1",
     maxTotalAmount: "20",
@@ -39,7 +39,7 @@ try {
   const result = await handlePay(services, {
     intent: "demo: pay for a data API call",
     mandateId: mandate.id,
-    counterparty: "xapi.to",
+    counterparty: "agent402.tools",
     payTo,
     amount,
     quoteAmount: amount,

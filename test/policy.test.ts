@@ -10,9 +10,9 @@ for (const policy of defaultPolicies()) engine.register(policy);
 function mandate(overrides: Partial<Mandate> = {}): Mandate {
   return {
     id: "m-1",
-    summary: "allow up to 0.5 USDC per call to xapi.to",
+    summary: "allow up to 0.5 USDC per call to agent402.tools",
     issuer: "0xissuer",
-    counterpartyAllowlist: ["xapi.to"],
+    counterpartyAllowlist: ["agent402.tools"],
     payTo: ["0xpayto"],
     maxAmountPerPayment: "0.5",
     maxTotalAmount: "1.0",
@@ -24,7 +24,7 @@ function mandate(overrides: Partial<Mandate> = {}): Mandate {
 function ctx(overrides: Partial<PolicyContext> = {}): PolicyContext {
   return {
     mandate: mandate(),
-    counterparty: "xapi.to",
+    counterparty: "agent402.tools",
     payTo: "0xpayto",
     amount: "0.1",
     quoteAmount: "0.1",

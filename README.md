@@ -87,7 +87,7 @@ claude mcp add ledgeroot \
 
 之后全程对话：
 
-1. **签发授权**：说「给它授权 5 USDC 买 xapi.to 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认 → 授权令签好存库。
+1. **签发授权**：说「给它授权 5 USDC 买 agent402.tools 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认 → 授权令签好存库。
 2. **agent 花钱**：说「帮我调研 X，要买付费数据」→ agent 自动 `ledgeroot_pay` → 策略校验 → facilitator 结算 → 六段收据。
 3. **撤销**：说「撤销它的授权」→ `ledgeroot_mandate_revoke`。
 4. **审计**：说「查收据 / 验证证据」→ `ledgeroot_receipt_list` / `ledgeroot_verify`。

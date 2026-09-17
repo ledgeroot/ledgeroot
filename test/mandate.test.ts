@@ -11,9 +11,9 @@ const KEY = `0x${"2".repeat(64)}`;
 function mandate(overrides: Partial<Mandate> = {}): Mandate {
   return {
     id: "m-1",
-    summary: "allow up to 0.5 USDC per call to xapi.to",
+    summary: "allow up to 0.5 USDC per call to agent402.tools",
     issuer: "",
-    counterpartyAllowlist: ["xapi.to"],
+    counterpartyAllowlist: ["agent402.tools"],
     payTo: ["0x35DA8C7a8d2253354925354b436A0422B9618dE4"],
     maxAmountPerPayment: "0.5",
     maxTotalAmount: "2.0",

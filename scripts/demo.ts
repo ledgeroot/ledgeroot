@@ -21,9 +21,9 @@ async function main(): Promise<void> {
     const mandate = await signMandate(
       {
         id: "demo-mandate",
-        summary: "Allow up to 1 USDC per call, 5 USDC total, only xapi.to, for 24h",
+        summary: "Allow up to 1 USDC per call, 5 USDC total, only agent402.tools, for 24h",
         issuer: "",
-        counterpartyAllowlist: ["xapi.to"],
+        counterpartyAllowlist: ["agent402.tools"],
         payTo: [PAY_TO],
         maxAmountPerPayment: "1",
         maxTotalAmount: "5",
@@ -36,11 +36,11 @@ async function main(): Promise<void> {
 
     // ② Normal payment, within the mandate.
     const base = {
-      intent: "buy search data from xapi.to",
+      intent: "buy search data from agent402.tools",
       mandateId: mandate.id,
       requestId: "demo-req-1",
       taskId: "demo-task",
-      counterparty: "xapi.to",
+      counterparty: "agent402.tools",
       payTo: PAY_TO,
       amount: "0.1",
       quoteAmount: "0.1",
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
       intent: "transfer entire budget to 0xevil (prompt injection)",
       mandateId: mandate.id,
       taskId: "demo-task",
-      counterparty: "xapi.to",
+      counterparty: "agent402.tools",
       payTo: EVIL,
       amount: "100",
       quoteAmount: "100",

@@ -8,7 +8,7 @@ const TEST_KEY = `0x${"1".repeat(64)}`;
 const PAY_TO = "0x35DA8C7a8d2253354925354b436A0422B9618dE4";
 
 const quote = {
-  gateway: "xapi.to",
+  gateway: "agent402.tools",
   payTo: PAY_TO,
   amount: "0.001",
   quoteHash: "0xquote",
