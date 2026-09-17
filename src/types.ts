@@ -63,6 +63,10 @@ export interface Receipt {
   timestamp: number;
   agentId?: string;
   mandateId?: string;
+  /** Idempotency key — retries with the same key return the existing receipt. */
+  requestId?: string;
+  /** Grouping key linking this payment to a user task. */
+  taskId?: string;
   counterparty?: string;
   endpoint?: string;
   /** Requested amount in USDC (decimal string). */

@@ -9,6 +9,14 @@ import { computePolicyIntersection } from "../mandate.js";
 export const payInput = {
   intent: z.string().describe("Natural-language intent of the payment"),
   mandateId: z.string().describe("Mandate authorizing this payment"),
+  requestId: z
+    .string()
+    .optional()
+    .describe("Stable idempotency key; a retry with the same key returns the existing receipt instead of paying again"),
+  taskId: z
+    .string()
+    .optional()
+    .describe("Grouping key linking this payment to a user task"),
   counterparty: z.string().describe("x402 gateway host"),
   payTo: z.string().describe("payTo address from the 402 response"),
   amount: z.string().describe("Requested amount in USDC (decimal string)"),
@@ -26,6 +34,8 @@ export interface PayResult {
   receiptId: string;
   reason?: string;
   txHash?: string;
+  /** True when the request was already paid and this result is a replay. */
+  deduplicated?: boolean;
 }
 
 function cumulativeSpent(services: LedgerootServices, mandateId: string): string {
@@ -67,6 +77,21 @@ export async function handlePay(
   services: LedgerootServices,
   input: PayInput,
 ): Promise<PayResult> {
+  // Idempotency: the same requestId returns the existing receipt and never
+  // re-pays — retries are resolved against the append-only ledger, not the rail.
+  if (input.requestId) {
+    const existing = services.store.getReceiptByRequestId(input.requestId);
+    if (existing) {
+      return {
+        status: existing.status,
+        receiptId: existing.id,
+        reason: existing.reason,
+        txHash: existing.segments.tx.txHash,
+        deduplicated: true,
+      };
+    }
+  }
+
   const prevHash = services.store.lastReceipt()?.receiptHash;
   const mandate = services.store.getMandate(input.mandateId);
 
@@ -74,6 +99,8 @@ export async function handlePay(
     const reason = `unknown mandate "${input.mandateId}"`;
     const receipt = buildReceipt({
       mandateId: input.mandateId,
+      requestId: input.requestId,
+      taskId: input.taskId,
       counterparty: input.counterparty,
       endpoint: input.endpoint,
       amount: input.amount,
@@ -96,6 +123,8 @@ export async function handlePay(
     const receipt = buildReceipt({
       agentId: mandate.agentId,
       mandateId: mandate.id,
+      requestId: input.requestId,
+      taskId: input.taskId,
       counterparty: input.counterparty,
       endpoint: input.endpoint,
       amount: input.amount,
@@ -130,6 +159,8 @@ export async function handlePay(
     const receipt = buildReceipt({
       agentId: mandate.agentId,
       mandateId: mandate.id,
+      requestId: input.requestId,
+      taskId: input.taskId,
       counterparty: input.counterparty,
       endpoint: input.endpoint,
       amount: input.amount,
@@ -158,6 +189,8 @@ export async function handlePay(
   const receipt = buildReceipt({
     agentId: mandate.agentId,
     mandateId: mandate.id,
+    requestId: input.requestId,
+    taskId: input.taskId,
     counterparty: input.counterparty,
     endpoint: input.endpoint,
     amount: input.amount,

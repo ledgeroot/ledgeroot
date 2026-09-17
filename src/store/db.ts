@@ -10,6 +10,7 @@ export interface ReceiptFilter {
   mandateId?: string;
   status?: ReceiptStatus;
   endpoint?: string;
+  taskId?: string;
 }
 
 /**
@@ -29,6 +30,8 @@ export class LedgerootStore {
         status TEXT NOT NULL,
         agent_id TEXT,
         mandate_id TEXT,
+        request_id TEXT,
+        task_id TEXT,
         counterparty TEXT,
         endpoint TEXT,
         amount TEXT,
@@ -55,9 +58,9 @@ export class LedgerootStore {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO receipts
-           (id, prev_hash, status, agent_id, mandate_id, counterparty, endpoint, amount, reason, receipt_json, created_at)
+           (id, prev_hash, status, agent_id, mandate_id, request_id, task_id, counterparty, endpoint, amount, reason, receipt_json, created_at)
          VALUES
-           (@id, @prev_hash, @status, @agent_id, @mandate_id, @counterparty, @endpoint, @amount, @reason, @receipt_json, @created_at)`,
+           (@id, @prev_hash, @status, @agent_id, @mandate_id, @request_id, @task_id, @counterparty, @endpoint, @amount, @reason, @receipt_json, @created_at)`,
       )
       .run({
         id: receipt.id,
@@ -65,6 +68,8 @@ export class LedgerootStore {
         status: receipt.status,
         agent_id: receipt.agentId ?? null,
         mandate_id: receipt.mandateId ?? null,
+        request_id: receipt.requestId ?? null,
+        task_id: receipt.taskId ?? null,
         counterparty: receipt.counterparty ?? null,
         endpoint: receipt.endpoint ?? null,
         amount: receipt.amount ?? null,
@@ -88,6 +93,16 @@ export class LedgerootStore {
     return row ? (JSON.parse(row.receipt_json) as Receipt) : null;
   }
 
+  /** Return the earliest receipt for an idempotency key, if any. */
+  getReceiptByRequestId(requestId: string): Receipt | null {
+    const row = this.db
+      .prepare(
+        "SELECT receipt_json FROM receipts WHERE request_id = ? ORDER BY created_at ASC, id ASC LIMIT 1",
+      )
+      .get(requestId) as { receipt_json: string } | undefined;
+    return row ? (JSON.parse(row.receipt_json) as Receipt) : null;
+  }
+
   listReceipts(filter: ReceiptFilter = {}): Receipt[] {
     const clauses: string[] = [];
     const params: Record<string, unknown> = {};
@@ -102,6 +117,10 @@ export class LedgerootStore {
     if (filter.endpoint) {
       clauses.push("endpoint = @endpoint");
       params.endpoint = filter.endpoint;
+    }
+    if (filter.taskId) {
+      clauses.push("task_id = @taskId");
+      params.taskId = filter.taskId;
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
     const rows = this.db

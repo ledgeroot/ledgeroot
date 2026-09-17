@@ -4,6 +4,8 @@ import { canonicalHash } from "./hashchain.js";
 export interface ReceiptInput {
   agentId?: string;
   mandateId?: string;
+  requestId?: string;
+  taskId?: string;
   counterparty?: string;
   endpoint?: string;
   amount?: string;
@@ -24,6 +26,8 @@ export function buildReceipt(input: ReceiptInput): Receipt {
     timestamp: Date.now(),
     agentId: input.agentId,
     mandateId: input.mandateId,
+    requestId: input.requestId,
+    taskId: input.taskId,
     counterparty: input.counterparty,
     endpoint: input.endpoint,
     amount: input.amount,
