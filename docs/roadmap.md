@@ -22,6 +22,7 @@
 | ✅ ~~**A2（`seq` 分配）**~~ | **已完成（2026-09-17）**。原判断（撞号）实测不成立；真实问题是每次插入全表扫描——50k 行时 **5.6 ms/笔 → 53 µs** |
 | ⏭ **D1b（链改配置化）** | 成本低（`FacilitatorNetworkConfig` 类型已就绪），且让测试网 → 主网变成改配置。**下一个** |
 | ⏸ **B 类整组（规模问题）** | 索引、批量、分区、聚合——**黑客松后**。见 [architecture-gaps.md](./architecture-gaps.md) §二 |
+| ⏸ **「多笔微支付聚合对账」demo（P1-6）** | 演示场景见 `demo场景清单` §二 第 6 项。**黑客松后**——届时补齐聚合查询 / 可下钻 / 对账导出；赛内只用 `taskId` 做「N 笔 / 总额 / 拦截数」分组 |
 | ⏸ **N 系列（竞品对齐项）** | RFC 3161、held-set completeness、单文件验证器——**黑客松后** |
 
 > 📌 **为什么选 Monad 不是凑数**：Monad 的定位是高吞吐 + 低费用，而 **agent 小额支付正是唯一真正需要那个吞吐量的工作负载**（每秒数百笔 $0.005，在吞吐与费率不够的链上光 gas 就不可行）。**它和 §一 第 0 条的生态位本来就对齐。** 详见 [architecture-gaps.md](./architecture-gaps.md) §D1a。
@@ -75,9 +76,9 @@
 | 测试（9 个 TS + 1 个 Solidity） | `test/`, `contracts/test/` | ✅ 存在 |
 | 已发 npm（`ledgeroot@0.1.2`） | `package.json` | ✅ 已发布 |
 
-### 2.2 正确性缺陷（源码级，P0）—— ✅ 7/8 已修，仅 D6 未修
+### 2.2 正确性缺陷（源码级，P0）—— ✅ 8/8 已修
 
-> ⚠️ **本表为缺陷原始登记，状态见最右列。**（2026-09-17 复核）
+> ⚠️ **本表为缺陷原始登记，状态见最右列。**（2026-09-18 复核）
 
 | # | 缺陷 | 位置 | 后果 | 状态 |
 |---|---|---|---|---|
@@ -86,11 +87,11 @@
 | D3 | **`incomplete` 是死代码**：`classify()` 只返回 `verified` / `tampered` | `src/verify/verifier.ts` | README 宣称三态，实际两态；"缺 txHash"被误判为"被篡改" | ✅ 已修（P0-3） |
 | D4 | **锚定后误报篡改**：`verify` 用全量收据对比 `latestAnchor().root` | `src/tools/receipts.ts` | 锚定后再发生任何支付 → 重算根不匹配 → 报 `tampered` | ✅ 已修（P0-4） |
 | D5 | **第六段交付凭据是假的**：`segments.delivery = { payloadHash: payment.txHash }` | `src/tools/pay.ts` | 把 txHash 抄进交付证明字段；品牌核心能力原为占位符 | ✅ 已修（P0-5） |
-| D6 | **锚定合约无权限控制**：`anchor(bytes32)` 任何人可调 | `contracts/src/LedgerootAnchor.sol` | "上链了"只证明"有人锚了这个根"；x402 草案攻击 A4 已把同类问题标为可伪造 | ❌ **仍未修 ← 唯一剩余 P0** |
+| D6 | **锚定合约无权限控制**：`anchor(bytes32)` 任何人可调 | `contracts/src/LedgerootAnchor.sol` | "上链了"只证明"有人锚了这个根"；x402 草案攻击 A4 已把同类问题标为可伪造 | ✅ 已修（P0-6） |
 | D7 | **无链上结算内容校验**：只信任 facilitator 返回的 `txHash` | `src/verify/verifier.ts` | 出错或被攻破的 facilitator 返回伪造 txHash，验证照样报 `verified` | ✅ 已修（P0-7） |
 | **D8** | **收据排序不确定**：`listReceipts` 按 `created_at ASC, id ASC` 排序，同毫秒时次级排序回退到**内容哈希** `id`，与追加顺序无关 | `src/store/db.ts` | 旗舰的离线验证会间歇性误报 `tampered`（实测 12 次里 7 次）；且 epoch 根依赖该顺序 → **锚定不可复现** | ✅ 已修（P0-8，方案 A：`seq` 列 + 迁移） |
 
-> 📌 **D1–D5、D7、D8 的完成意味着**：截至 2026-09-17，Ledgeroot 的密码学实现**已与最强的对手（Traceipt）打平**。剩下的是商业债而非技术债——见 §2.4。
+> 📌 **D1–D8 的完成意味着**：截至 2026-09-18，Ledgeroot 的密码学实现**已与最强的对手（Traceipt）打平**，锚定权限这一项还先走一步（Traceipt 的 calldata 方案同样不校验 `from`）。剩下的是商业债而非技术债——见 §2.4。
 
 ### 2.3 未开始
 
@@ -300,12 +301,19 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 
 ### P0-6. 锚定合约加权限控制
 
+> ✅ **已完成（2026-09-18）**。
+> 实现：`owner` + `onlyOwner`，owner 在 constructor 中一次性确定；constructor 拒绝 `address(0)`——否则该合约永久无法锚定且没有退路，部署就该 revert，而不是留下一个静默拒绝一切的合约。
+> owner 取**锚定钱包**而非部署者：`deploy/monad.ts` 从 `LEDGEROOT_PRIVATE_KEY` 推导，即 `Anchorer` 实际提交所用的 key，因此用另一把 key 部署仍得到一个该 key 能写入的合约。`anchorAbi` 相应补上 constructor 项。
+> 已部署 `0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`（Monad testnet，block 63511816），owner `0x055A…A8f7`；链上 runtime bytecode 与 `forge build` 产物逐字节一致。
+> 附带修掉部署路径上两个 bug：`readFoundryBytecode` 无条件加 `0x` 前缀（forge 本就带前缀）→ 实际发出 `0x0x…`，节点回 `eth_estimateGas: Invalid parameters`（看着像节点问题，其实是字符串问题）；`deployAnchor` 返回的是交易哈希而非合约地址。
+> 验证：`forge test` 5/5，含「非授权地址回滚」与「越权替换后 root 与计数器都不动」。
+
 - **为什么**：D6。x402 草案攻击 A4 已把 permissionless 锚定判为可伪造，且建议生产环境默认用 permissioned。
 - **做什么**：
-  - `anchor()` 加 `onlyOwner` 或记录提交者身份
-  - 事件中移除或评估 `epoch` 序号的隐私风险（对照草案攻击 A7）
-- **涉及**：`contracts/src/LedgerootAnchor.sol`、`contracts/test/LedgerootAnchor.t.sol`、`src/anchor/anchorer.ts`
-- **验收**：非授权地址调用 `anchor()` 回滚
+  - `anchor()` 加 `onlyOwner` 或记录提交者身份 —— ✅ 已做（`onlyOwner`）
+  - 事件中 `epoch` 序号的隐私风险（对照草案攻击 A7）—— ⚠️ **已评估，判定不移除**：`Anchored` 事件每次锚定发一条，任何人数一下事件条数得到的就是同一个数字，且 `lastEpoch` 本身是 `public` getter——把字段从事件里删掉只是把同一个数从两个出口减到一个，观察者零成本还原。草案那条是 `receiptCount`（批次大小），**没有别的字段能推出**，所以那边删了是真删。Ledgeroot 这边「锚定活动可被观察」是锚定本身固有的（除非少锚或合并锚），不是 `epoch` 字段造成的。
+- **涉及**：`contracts/src/LedgerootAnchor.sol`、`contracts/test/LedgerootAnchor.t.sol`、`src/anchor/anchorer.ts`、`deploy/monad.ts`
+- **验收**：非授权地址调用 `anchor()` 回滚 —— ✅ 已由 `test_RevertWhen_NonOwnerAnchors` 覆盖
 
 ### P0-7. 链上结算内容校验
 
@@ -501,6 +509,7 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
   - **可下钻**：从聚合数字回到单张收据
   - **对账导出**：能进 ERP 的数据结构（不是审计证据包）
   - **异常视图**：谁在涨、哪条策略拦得最多
+- **演示场景（对应 `demo场景清单` §二 第 6 项「多笔微支付聚合对账」）**：平台账单 vs 本地收据逐笔核对，在「每笔一张收据、哈希链串联」的前提下给出聚合对账视图（笔数 / 金额 / 对手方 / 时间桶 + 可下钻到单张收据）。⚠️ **该场景为赛后交付**——黑客松 demo 只用已实现的 `taskId` 分组展示「N 笔 / 总额 / 拦截数」，完整的聚合查询、对账导出与下钻由本条交付。
 - **涉及**：新增聚合模块；`mandatekey/app/api/` 新增路由；`src/store/db.ts` 的查询层
 - **验收**：100 万条收据下，月度聚合在**秒级**返回；导出的结构能被真实财务/AP 人员读入
 - ⚠️ **前置**：本条依赖 **C1 的设计决定**（见 §十）——元数据集中到什么程度，决定聚合层的数据模型
