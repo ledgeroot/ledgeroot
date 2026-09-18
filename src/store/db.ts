@@ -14,6 +14,14 @@ export interface ReceiptFilter {
 }
 
 /**
+ * A mandate as stored locally: the signed credential plus the revocation state
+ * the credential itself cannot carry.
+ */
+export interface MandateRecord extends Mandate {
+  revoked: boolean;
+}
+
+/**
  * A payment attempt recorded before the money moves.
  *
  * This is deliberately not a receipt. A receipt's id is the hash of its
@@ -302,11 +310,32 @@ export class LedgerootStore {
     return info.changes;
   }
 
+  /** Mandates still in force. See `listMandateRecords` to include revoked ones. */
   listMandates(): Mandate[] {
     const rows = this.db
       .prepare("SELECT mandate_json FROM mandates WHERE revoked = 0")
       .all() as Array<{ mandate_json: string }>;
     return rows.map((r) => JSON.parse(r.mandate_json) as Mandate);
+  }
+
+  /**
+   * Every mandate with its revocation state.
+   *
+   * Revocation is not a field on `Mandate` on purpose: a mandate is a signed
+   * credential, and its bytes are what the issuer signed. Whether it has since
+   * been revoked is local state about that credential, so it is kept beside it
+   * rather than inside it. Without this view a revoked authorization can only
+   * vanish from the list, which is exactly the wrong signal at the moment a
+   * user needs to see that their kill switch worked.
+   */
+  listMandateRecords(): MandateRecord[] {
+    const rows = this.db
+      .prepare("SELECT mandate_json, revoked FROM mandates ORDER BY imported_at ASC")
+      .all() as Array<{ mandate_json: string; revoked: number }>;
+    return rows.map((row) => ({
+      ...(JSON.parse(row.mandate_json) as Mandate),
+      revoked: row.revoked === 1,
+    }));
   }
 
   getMandate(id: string): Mandate | null {

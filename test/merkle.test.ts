@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, it, expect } from "vitest";
-import { merkleRoot } from "../src/anchor/merkle.js";
+import { merkleProof, merkleRoot, verifyMerkleProof } from "../src/anchor/merkle.js";
 import { canonicalHash } from "../src/receipt/hashchain.js";
 
 function h(...chunks: Buffer[]): Buffer {
@@ -110,5 +110,79 @@ describe("merkleRoot (RFC 6962)", () => {
     const list = ["a", "b", "c"].map(canonicalHash);
     expect(merkleRoot(list)).toBe(merkleRoot(list));
     expect(merkleRoot(list)).toHaveLength(64);
+  });
+});
+
+describe("merkleProof / verifyMerkleProof (RFC 6962 inclusion)", () => {
+  it("proves every leaf of every size against the stack algorithm's root", () => {
+    // The root here comes from stackTreeHead, not from mth, so a proof and its
+    // verifier cannot agree with each other and both be wrong.
+    for (let size = 1; size <= 33; size++) {
+      const list = leaves(size);
+      const root = stackTreeHead(list);
+      for (let index = 0; index < size; index++) {
+        const proof = merkleProof(list, index);
+        expect(verifyMerkleProof(list[index], proof, root), `size ${size} index ${index}`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it("proves a single-leaf tree with an empty path", () => {
+    const list = leaves(1);
+    const proof = merkleProof(list, 0);
+    expect(proof.path).toEqual([]);
+    expect(verifyMerkleProof(list[0], proof, merkleRoot(list))).toBe(true);
+  });
+
+  it("rejects a proof presented for a different leaf", () => {
+    const list = leaves(7);
+    const proof = merkleProof(list, 3);
+    expect(verifyMerkleProof(list[4], proof, stackTreeHead(list))).toBe(false);
+  });
+
+  it("rejects a proof checked against a root it was not built for", () => {
+    const list = leaves(6);
+    const proof = merkleProof(list, 2);
+    expect(verifyMerkleProof(list[2], proof, merkleRoot(leaves(5)))).toBe(false);
+  });
+
+  it("rejects a tampered path", () => {
+    const list = leaves(5);
+    const proof = merkleProof(list, 1);
+    proof.path[0] = leaves(9)[8];
+    expect(verifyMerkleProof(list[1], proof, stackTreeHead(list))).toBe(false);
+  });
+
+  it("rejects a truncated or padded path", () => {
+    const list = leaves(8);
+    const root = stackTreeHead(list);
+    const proof = merkleProof(list, 5);
+    expect(verifyMerkleProof(list[5], { ...proof, path: proof.path.slice(1) }, root)).toBe(false);
+    expect(verifyMerkleProof(list[5], { ...proof, path: [...proof.path, proof.path[0]] }, root)).toBe(
+      false,
+    );
+  });
+
+  it("rejects a size whose shape the path cannot fill", () => {
+    const list = leaves(6);
+    const proof = merkleProof(list, 0);
+    // A 4-leaf tree folds this leaf through two siblings; the 6-leaf path has
+    // three, so one is left over and the proof is not for that shape.
+    expect(verifyMerkleProof(list[0], { ...proof, size: 4 }, stackTreeHead(list))).toBe(false);
+  });
+
+  it("rejects an index outside the tree and a leaf of the wrong width", () => {
+    const list = leaves(4);
+    const root = merkleRoot(list);
+    expect(verifyMerkleProof(list[0], { index: 4, size: 4, path: [] }, root)).toBe(false);
+    expect(verifyMerkleProof(list[0], merkleProof(list, 0), root)).toBe(true);
+    expect(verifyMerkleProof("", merkleProof(list, 0), root)).toBe(false);
+  });
+
+  it("refuses to build a proof for a leaf that is not there", () => {
+    expect(() => merkleProof(leaves(3), 3)).toThrow();
+    expect(() => merkleProof([], 0)).toThrow();
   });
 });

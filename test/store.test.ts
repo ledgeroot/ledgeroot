@@ -5,7 +5,7 @@ import { LedgerootStore } from "../src/store/db.js";
 import { buildReceipt } from "../src/receipt/builder.js";
 import { verifyAnchor, verifyReceiptChain } from "../src/verify/verifier.js";
 import { TEST_PUBLIC_KEY, sign } from "./support.js";
-import type { Receipt, ReceiptSegments } from "../src/types.js";
+import type { Mandate, Receipt, ReceiptSegments } from "../src/types.js";
 
 const DB = "/tmp/cc-store-test.sqlite";
 const LEGACY_DB = "/tmp/cc-store-legacy.sqlite";
@@ -227,5 +227,47 @@ describe("receipt sequence assignment", () => {
     probe.close();
 
     expect(seqs).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("mandate records", () => {
+  const mandate = (id: string): Mandate => ({
+    id,
+    summary: `mandate ${id}`,
+    issuer: "0xissuer",
+    counterpartyAllowlist: [],
+    payTo: [],
+    maxAmountPerPayment: "0.5",
+    maxTotalAmount: "2.0",
+    expiresAt: 2_000_000_000,
+  });
+
+  it("keeps a revoked mandate visible, with its state", () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate("m-1"));
+    store.upsertMandate(mandate("m-2"));
+    store.revokeMandate("m-2");
+
+    // The policing view still hides it, which is what a payment path wants.
+    expect(store.listMandates().map((m) => m.id)).toEqual(["m-1"]);
+
+    // The record view is what a dashboard needs: once the kill switch fires,
+    // an authorization has to read as revoked rather than simply vanish.
+    expect(store.listMandateRecords().map((m) => [m.id, m.revoked])).toEqual([
+      ["m-1", false],
+      ["m-2", true],
+    ]);
+    store.close();
+  });
+
+  it("clears revocation when the same mandate is imported again", () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate("m-1"));
+    expect(store.revokeAllMandates()).toBe(1);
+    expect(store.listMandateRecords()[0].revoked).toBe(true);
+
+    store.upsertMandate(mandate("m-1"));
+    expect(store.listMandateRecords()[0].revoked).toBe(false);
+    store.close();
   });
 });

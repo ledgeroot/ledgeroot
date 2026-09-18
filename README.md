@@ -31,6 +31,7 @@ Ledgeroot 的三层架构与 MAS SAFR 白皮书的三个运行时保障功能一
 - 段间由 RFC 8785 哈希链互锁（每张收据回指上一张的 `receiptHash`）
 - **每张收据带 Ed25519 detached 签名**：JWS 式 `protected` 头，签名覆盖 `{payload, protected}`，因此 `alg` / `kid` 落在被签字节内不可替换；公钥以 JWKS 发布（`npx ledgeroot jwks`），第三方无需连回即可验签。哈希链证"内容没被改"，签名证"谁做的陈述"
 - epoch Merkle 根由 25 行锚定合约提交上链；锚定记录该根覆盖的收据数，因此之后新增支付不会让校验误报
+- **单张收据可取 RFC 6962 包含证明**（`merkleProof` / `verifyMerkleProof`）：第三方只拿一张收据，就能证明它属于已锚定的那个 epoch，不必交出其余账本
 - 第六段只在调用方回报响应体时写入（`ledgeroot_pay` 的 `responseBody`），只存哈希与字节数，不存原文
 - `npx ledgeroot verify` 离线三态验证（`verified / tampered / incomplete`），不经过任何服务器
 - `npx ledgeroot verify --check-chain` 额外按 `txHash` 拉链上交易，比对 USDC 合约、付款方、收款方与金额；节点不可达时报 `incomplete` 而非 `tampered`

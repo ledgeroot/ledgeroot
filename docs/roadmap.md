@@ -449,12 +449,15 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 
 ### P1-1. 完整性证明产品化（支柱 2）
 
+> 🚧 **部分完成（2026-09-18，0.4.0）**：`merkleProof` / `verifyMerkleProof` 已实现（RFC 6962 §2.1.3 审计路径），并带交叉验证测试——对 size 1–33 的**每个**叶子，用 §2.1.2 栈式算法独立算出的根校验，避免"证明与验证器互相印证同一个错误"。另加 `listMandateRecords()`（列出全部 mandate 含撤销状态）。
+> **仍未做**：把逐张包含证明接进 `verify` 与证据包（待 mandatekey 侧同步 0.4.0）；"缺口检测"语义与 `maxClass` 那一档。
+
 - **做什么**：
   - 把"哈希链 + epoch 根 ⇒ 序列无缺口"从实现细节变成**显式可验证的声明**
   - 新增能力：给定一个 epoch 的收据集合，能证明**没有收据被省略**
   - 为每张收据生成 **Merkle 包含证明**（目前 `merkle.ts` 只有 `merkleRoot`，没有 proof 生成/验证）
   - 明确"缺口检测"语义：序号连续性 + 链回指 + 根比对三层
-- **涉及**：`src/anchor/merkle.ts`（加 `merkleProof` / `verifyProof`）、`src/verify/verifier.ts`、`src/tools/receipts.ts`
+- **涉及**：`src/anchor/merkle.ts`（加 `merkleProof` / `verifyMerkleProof`）、`src/verify/verifier.ts`、`src/tools/receipts.ts`
 - **验收**：删掉中间一张收据 → 验证报错并指出缺口位置
 - **战略意义**：**这是 x402 草案测试 3.2.4 明确承认做不到、Traceipt 也做不到的事。是唯一被标准层面留白的硬能力。**
 
