@@ -10,11 +10,11 @@
 
 ## ⚠️ 修正说明（2026-09-17 复核）
 
-本文档写于 2026-09-17，其中**第 4 节"Ledgeroot 落后之处"列的 8 条问题，有 6 条已在当前源码中修复**。原表低估了 Ledgeroot，据此做决策会误判。
+本文档写于 2026-09-17，其中**第 4 节"Ledgeroot 落后之处"列的问题，§4.1 至 §4.5 已全部在当前源码中修复**（含 2026-09-18 修掉的锚定权限控制）。原表低估了 Ledgeroot，据此做决策会误判。
 
 | 原节 | 原结论 | 当前源码实况 |
 |---|---|---|
-| §4.1 收据没有签名 | ❌ 完全无签名 | ✅ **已修**（`verifyAttribution()` + `RECEIPT_ALG`，算法与 kid 落在被签字节内）；**但同节的 `LedgerootAnchor` 无权限控制仍未修** |
+| §4.1 收据没有签名 | ❌ 完全无签名 | ✅ **已修**（`verifyAttribution()` + `RECEIPT_ALG`，算法与 kid 落在被签字节内）；同节的 `LedgerootAnchor` 无权限控制**也已修**（2026-09-18，`owner` + `onlyOwner`） |
 | §4.2 不做链上结算内容校验 | ❌ 只信任 facilitator 的 txHash | ✅ **已修**（`src/verify/onchain.ts` 拉 tx、解 ERC-3009、比对 from/to/value） |
 | §4.3 第 6 段是假的 | ❌ 把 txHash 抄进交付凭证 | ✅ **已修**（`pay.ts` 对 `responseBody` 做 `contentHash` + `payloadSize`） |
 | §4.4 `incomplete` 是死代码 | ⚠️ 永远返回不到 `incomplete` | ✅ **已修**（`IssueKind = "tampered" \| "incomplete"`，`tampered` 优先） |
@@ -206,7 +206,7 @@ TrustBench 是路由器，能看到你请求的每个 capability 和 payer 地�
 | # | 项 | 原状态 | 现状 | 对手是否有 |
 |---|---|---|---|---|
 | 4.1a | 收据签名 | ❌ 无签名 | ✅ **已修** | TrustBench ✅ / BlueTier ✅ |
-| 4.1b | `LedgerootAnchor` 权限控制 | ❌ permissionless | ❌ **仍未修** | Traceipt 同类问题（不校验 `from`）——**平手，谁先修谁得分** |
+| 4.1b | `LedgerootAnchor` 权限控制 | ❌ permissionless | ✅ **已修** | Traceipt 同类问题（不校验 `from`）**至今未修**——**这一分我们拿到** |
 | 4.2 | 链上结算内容校验 | ❌ 只信任 facilitator | ✅ **已修** | TrustBench ✅（`--check-chain`） |
 | 4.3 | 六段收据第 6 段 | ❌ 占位符 | ✅ **已修** | TrustBench ✅ |
 | 4.4 | `incomplete` 三态 | ⚠️ 死代码 | ✅ **已修** | TrustBench ✅（`valid\|invalid\|unavailable`） |
@@ -265,15 +265,15 @@ export function classify(issues: Issue[]): VerificationStatus {
 
 </details>
 
-### 仍未修的四项 + 新增的三项
+### 仍未修的三项 + 新增的三项
 
-#### 4.1b `LedgerootAnchor` 没有权限控制 —— 唯一未修的 P0
+#### 4.1b `LedgerootAnchor` 的权限控制 —— ✅ **已修（2026-09-18）**
 
-`contracts/src/LedgerootAnchor.sol` 的 `anchor(bytes32 root)` 仍是 permissionless：任何人都能锚任意根。所以"上链了"目前只证明"有人在这个时间锚了这个根"，不证明"是谁锚的"。
+原状：`contracts/src/LedgerootAnchor.sol` 的 `anchor(bytes32 root)` 是 permissionless，任何人都能锚任意根，所以"上链了"只证明"有人在这个时间锚了这个根"，不证明"是谁锚的"。
 
-> ⚠️ **x402 Receipt Attestation 草案的攻击 A4 已明确把 permissionless 锚定标为可伪造**，并在生产建议里用的是 permissioned 合约。Traceipt 的方案有同类问题（只比对 calldata 内容，不校验交易的 `from`）——**两边都缺，谁先修谁得分。**
+> ⚠️ **x402 Receipt Attestation 草案的攻击 A4 已明确把 permissionless 锚定标为可伪造**，并在生产建议里用的是 permissioned 合约。Traceipt 的方案有同类问题（只比对 calldata 内容，不校验交易的 `from`）——**当时两边都缺，谁先修谁得分。**
 
-**修法**：加 `owner` 或 issuer 映射，仅允许登记的签名者写根；或保留 permissionless 但在 `Anchored` 事件里带上 `msg.sender` 并在验证时比对。
+**实际做法**：加了 `owner` + `onlyOwner`，owner 取**锚定钱包**（`LEDGEROOT_PRIVATE_KEY`），所以 deployer 与 anchorer 可以是两把 key；constructor 拒绝 `address(0)`，避免部署出一个永远无法锚定又无法回退的合约。已部署 `0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`（Monad testnet），`forge test` 5/5 含"非授权地址回滚"。**Traceipt 那侧至今仍未修——这一分我们拿到。**
 
 #### 4.6 没有 agent-native 发现面
 
@@ -384,7 +384,7 @@ Ledgeroot 真正没人抄得动的是这一组：
 | 2 | 链上结算内容校验 | 消除"facilitator 伪造 txHash 仍报 verified" | §4.2 | ✅ 已完成 |
 | 3 | 修复六段收据第 6 段 | 品牌核心能力原为占位符 | §4.3 | ✅ 已完成 |
 | 4 | 修 `incomplete` 与锚定后误报篡改 | 旗舰"三态验证"原不成立 | §4.4 §4.5 | ✅ 已完成 |
-| 5 | ⚠️ **`LedgerootAnchor` 加 owner / issuer 记录** | **唯一未修的 P0**；x402 草案攻击 A4 已把 permissionless 标为可伪造 | §4.1b | ❌ 待办（**优先**） |
+| 5 | ✅ **`LedgerootAnchor` 加 owner / issuer 记录** | 原为唯一未修的 P0；x402 草案攻击 A4 已把 permissionless 标为可伪造 | §4.1b | ✅ 已完成（2026-09-18） |
 | 6 | **发布独立验证器包 + 收据规范** | 对标 `@trustbench/verify-receipt` 与 `traceipt-verify`；**commercialization.md §四"卖报告"的前置条件** | §4.7 | ❌ 待办（**优先**） |
 | 7 | 上 `skill.md` / `llms.txt` / `/.well-known` + 提交 MCP 目录 | 零成本被发现；本身就是 MCP server | §4.6 | ❌ 待办 |
 | 8 | facilitator 多路化 + 多链 + **上主网** | 消除单点；Traceipt/Black_Wall 已在 Base 主网 | §4.8 §4.11 | ❌ 待办 |
@@ -421,7 +421,7 @@ Ledgeroot 真正没人抄得动的是这一组：
 | 无签名 | `src/receipt/builder.ts` / `src/types.ts` | 仅 `canonicalHash`，`Receipt` 无签名字段 | ✅ 已修：`verifyAttribution()` + `RECEIPT_ALG` |
 | 无链上内容校验 | `src/verify/verifier.ts` | `verifyAnchor` 仅重算 Merkle 根 | ✅ 已修：新增 `src/verify/onchain.ts`（ERC-3009 解码比对） |
 | Merkle 无域分隔 | `src/anchor/merkle.ts` | 十六进制字符串拼接、奇数层复制末节点 | ✅ 已修：完整 RFC 6962 MTH（`0x00`/`0x01` 前缀、字节运算、2 的幂切分） |
-| **锚定合约无权限** | `contracts/src/LedgerootAnchor.sol` | `function anchor(bytes32 root) external { ... }` | ❌ **仍未修** |
+| **锚定合约无权限** | `contracts/src/LedgerootAnchor.sol` | `function anchor(bytes32 root) external { ... }` | ✅ **已修**：`owner` + `onlyOwner`，非授权地址回滚（2026-09-18） |
 | **单 facilitator / 测试网** | `src/x402/facilitator.ts` | `MONAD_FACILITATOR_URL` 硬编码 | ❌ **仍未修** |
 
 ---

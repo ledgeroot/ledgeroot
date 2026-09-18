@@ -23,7 +23,7 @@
 | **D. 相邻/间接** | SpendGate、Infopunks、Dexter、PayAI、x402scan… · **学术论文层**（NovaFabric 等，§五 D1） | 不同层面；**论文层几乎无商业威胁，是思路来源** | **监控 / 借鉴，按需合作** |
 | **E. 监管时钟** | EU AI Act 第 12 条 | 定义需求的时间表 | **对齐，但别过度承诺** |
 
-**最重要的判断**：Ledgeroot 的早期差异化能力（收据签名、Merkle 锚定、离线验证）**已经被标准化 —— 而且我们已追平**（2026-09-17 源码复核：RFC 6962 域分隔、Ed25519 签名、三态纪律、链上结算校验、第 6 段交付证明**均已实现**，仅剩锚定权限控制未修）。这三项不再是差异化，不要再拿它们做定位。
+**最重要的判断**：Ledgeroot 的早期差异化能力（收据签名、Merkle 锚定、离线验证）**已经被标准化 —— 而且我们已追平**（2026-09-18 源码复核：RFC 6962 域分隔、Ed25519 签名、三态纪律、链上结算校验、第 6 段交付证明、锚定权限控制**均已实现**）。这三项不再是差异化，不要再拿它们做定位。
 
 > ⚠️ **第四次修订更正（两处）**：
 >
@@ -124,7 +124,7 @@
 
 | 编号 | 发现 | 对 Ledgeroot 的含义 |
 |---|---|---|
-| **攻击 A4** | **伪造 Merkle 根 —— 在 permissionless 合约上"SUCCEEDS"** | ⚠️ `LedgerootAnchor.sol` 正是 permissionless 且无 owner 检查。**这个洞已在标准层面被标为已知问题** |
+| **攻击 A4** | **伪造 Merkle 根 —— 在 permissionless 合约上"SUCCEEDS"** | ✅ **已修（2026-09-18）**。`LedgerootAnchor.sol` 已加 `owner` + `onlyOwner`，非授权地址调用 `anchor()` 回滚 —— 这个已被标准层面标为已知问题的洞，我们已关掉 |
 | **测试 3.2.4** | "Facilitator 从批次中省略收据 —— 单张签名依然有效" | ✅ 他们**明确承认省略不可检测**。Ledgeroot 的哈希链可证"序列无缺口"——**这是标准层面的空白** |
 | **SI-2** | "无 facilitator 注册表"——无法区分合法 facilitator 与攻击者地址；建议用 **ERC-8004** 解决 | ✅ 印证 Ledgeroot 应接 ERC-8004；`Mandate.agentId` 字段已埋好 |
 | SI-3 | 双重扣款：同一 `paymentId` 可有两笔不同 `txHash` 的有效签名 | 参考，非直接相关 |
@@ -137,7 +137,7 @@
 - 依赖变更：**需要 x402 规范在 `SettlementResponse` 增加 `attestation` 字段**——尚未提交正式变更请求
 - 与已合并的 `offer-receipt` 扩展（PR #935，@alftom）协调中
 
-**结论：观察，并在合理处对齐格式。** 它不是标准，但是"标准会往哪走"的信号。特别是 A4——**它说明"permissionless 锚定不安全"正在成为共识，Ledgeroot 应主动修掉。**
+**结论：观察，并在合理处对齐格式。** 它不是标准，但是"标准会往哪走"的信号。特别是 A4——**它说明"permissionless 锚定不安全"正在成为共识，Ledgeroot 已主动修掉（2026-09-18）。**
 
 ---
 
@@ -278,7 +278,7 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | **Merkle 构造** | RFC 6962：`leaf = SHA256(0x00 ‖ data)`、`node = SHA256(0x01 ‖ L ‖ R)`，字节操作 | ✅ **已对齐**。`anchor/merkle.ts` 实现完整 RFC 6962 MTH，含 `0x00` / `0x01` 域分隔、按**字节**运算、以 2 的幂切分（不再复制奇数末节点） |
 | **签名** | JWS 式 `protected` header，签名覆盖 `canonicalJson({payload, protected})` → `alg` / `kid` 落在被签字节内 | ✅ **已对齐**。`verifyAttribution()` 校验 `protected.alg` 与 kid，签名覆盖含 `protected` 的规范字节，算法与密钥 id 不可替换 |
 | **三态纪律** | `ok: true \| false \| null`，`null` = SKIP，*"never silently passed"* | ✅ **已对齐**。`IssueKind = "tampered" \| "incomplete"`，`classify()` 中 `tampered` 优先于 `incomplete`，缺证据与被篡改真正分开 |
-| **链上锚定** | 根写入 Base 交易 calldata（`TRACEIPT-ANCHOR` 标记），验证时要求 calldata 精确等于标记+根 | ⚠️ **打平，各有弱点**。Ledgeroot 走 `LedgerootAnchor.anchor(bytes32)`（有事件日志，但**仍无权限控制**）；Traceipt 只比对 calldata 内容、**不校验交易的 `from`** —— 两边都无法证明"谁锚的" |
+| **链上锚定** | 根写入 Base 交易 calldata（`TRACEIPT-ANCHOR` 标记），验证时要求 calldata 精确等于标记+根 | ✅ **已领先**。Ledgeroot 走 `LedgerootAnchor.anchor(bytes32)`，有事件日志，且 **2026-09-18 起加 `owner` + `onlyOwner`，只有登记的锚定钱包能写根**；Traceipt 只比对 calldata 内容、**不校验交易的 `from`** —— 它至今无法证明"是谁锚的" |
 | **后量子** | 支持混合 **ML-DSA-65** 双签（npm 验证器只验 Ed25519 层，如实报告 PQ 层"存在但未验证"） | ❌ **仍落后**。Ledgeroot 无 PQ 方案 |
 | **跨语言规范化** | 拒绝浮点；键按 **Unicode 码点**排序（非 JS 默认 UTF-16 码元）；同时支持 Python `ensure_ascii` 两变体 | ⚠️ **仍落后**。Ledgeroot 用 `canonicalize` 包（RFC 8785），未处理跨语言变体 |
 | **独立验证器形态** | 独立 npm 包，退出码 0/1/2，`--offline` 可跳过 RPC 检查 | ⚠️ **仍落后**。验证器与本地库/SQLite schema 耦合，第三方难以独立引用 |
@@ -301,7 +301,7 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 
 #### 它的弱点（可攻击面）
 
-1. **锚定不可归属**：验证器只比对 calldata 内容，**不校验交易的 `from` 地址** → 任何人都能用该标记锚任意根。*（注：Ledgeroot 的 permissionless `anchor()` 有同类问题，但至少有合约地址可加 owner；两边都缺，谁先修谁得分。）*
+1. **锚定不可归属**：验证器只比对 calldata 内容，**不校验交易的 `from` 地址** → 任何人都能用该标记锚任意根。*（注：Ledgeroot 曾有同类问题，2026-09-18 已加 `owner` + `onlyOwner` 修掉——**这一分我们先拿到**。）*
 2. **无用户签名授权**：由 **Traceipt 自己**签名，没有 EIP-712 mandate 约束"允许付给谁、付多少"。**它证明发生了什么，不证明那件事被授权过。**
 3. **无非省略证明**：包含证明只证"收据 X 在批次 B 内"，**不能证明 B 含全部收据，也不能证明批次之间无跳号**。它的四步检查里没有一项对应"没有任何收据被省略"。
 4. **主代码库不公开**：`traceipt` 仓库不在 26 个公开仓库之列，只放出 npm 移植的 `traceipt-verify`；README 提到的 Python 参考实现（`tools/verify.py`）无法核查。
@@ -631,8 +631,8 @@ Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页）§6
 - [x] ✅ **链上结算内容校验**：`src/verify/onchain.ts` 拉 tx、解 ERC-3009、比对 from/to/value。**已完成**
 - [x] ✅ **修六段收据第 6 段**：`pay.ts` 对 `responseBody` 做 `contentHash` + `payloadSize`。**已完成**
 - [x] ✅ **修锚定后误报篡改**：`verifyAnchor` 按 `receiptCount` 切片。**已完成**
-- [ ] ⚠️ **`LedgerootAnchor` 加 owner 或 issuer 记录** —— **唯一未修的 P0。** x402 草案攻击 A4 已把 permissionless 标为可伪造；Traceipt 的 calldata 方案有同类问题但不校验 `from`，**谁先修谁得分**
-- [ ] 移除 `Anchored` 事件中的 `epoch` 序号或评估其隐私风险（对照草案攻击 A7）
+- [x] ✅ **`LedgerootAnchor` 加 owner 或 issuer 记录** —— **已完成（2026-09-18）。** `owner` + `onlyOwner`，owner 取锚定钱包（`LEDGEROOT_PRIVATE_KEY`），constructor 拒绝 `address(0)`；已部署 `0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`。x402 草案攻击 A4 曾把 permissionless 标为可伪造，而 Traceipt 的 calldata 方案至今仍不校验 `from`，**这一分我们先拿到**
+- [x] ✅ **评估 `Anchored` 事件中 `epoch` 序号的隐私风险（对照草案攻击 A7）—— 判定不移除。** 事件每次锚定发一条，任何人数一下事件条数得到的就是同一个数字，且 `lastEpoch` 本身是 `public` getter——删掉字段只是把同一个数从两个出口减到一个，观察者零成本还原。草案那条是 `receiptCount`（批次大小），**没有别的字段能推出**，所以那边删了是真删；这边的可观察性来自锚定本身，不是这个字段。
 - [ ] 接入 **ERC-8004**（草案 SI-2 指出无注册表则无法验证签名者身份）；`Mandate.agentId` 已埋好字段
 - [ ] 加密：评估长期档案的签名方案升级（对照 IETF 后量子草案 + **Traceipt 已支持混合 ML-DSA-65**）
 - [ ] **跨语言规范化**：拒绝浮点 + 键按 Unicode 码点排序 + 支持 Python `ensure_ascii` 变体（对照 Traceipt，其跨语言互通比 `canonicalize` 包更严谨）
