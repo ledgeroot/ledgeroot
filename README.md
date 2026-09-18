@@ -338,9 +338,10 @@ docs/            architecture review / roadmap / competitor and standards resear
 
 | Document | Contents |
 |---|---|
+| [aws-agentcore-payments-analysis.md](./docs/aws-agentcore-payments-analysis.md) | AWS Bedrock AgentCore payments (GA 2026-08-18): the first entrant that is a distributor *and* a capability competitor, and the hole it opens in the fee-structure moat |
 | [architecture-gaps.md](./docs/architecture-gaps.md) | Source-level architecture review: the real bugs that were fixed (the crash window, `seq` allocation), scaling gaps, the multi-protocol seam |
-| [roadmap.md](./docs/roadmap.md) | The action plan: P0 correctness (D1–D8 closed) → P1 differentiation → P2 visibility → P3 credibility; includes open decisions Q1–Q8 |
-| [threat-landscape.md](./docs/threat-landscape.md) | Threat landscape: carriers (PEAC / the x402 draft / IETF), distribution monopolists, direct competitors, the regulatory clock |
+| [roadmap.md](./docs/roadmap.md) | The action plan: P0 correctness (D1–D8 closed) → P1 differentiation → P2 visibility → P3 credibility; includes open decisions Q1–Q9 |
+| [threat-landscape.md](./docs/threat-landscape.md) | Threat landscape: carriers (PEAC / the x402 draft / IETF), distribution monopolists (Coinbase, card networks, **AWS**), direct competitors, the regulatory clock |
 | [standards-landscape.md](./docs/standards-landscape.md) | Academic and standards research: OAP, Vaara Receipt, and the case for supporting x402 and MPP side by side |
 | [vaara-competitive-analysis.md](./docs/vaara-competitive-analysis.md) | The closest competitor: self-hosted + offline single-file verification + held-set completeness |
 | [trustbench-competitive-analysis.md](./docs/trustbench-competitive-analysis.md) | A name collision, and a line-by-line source verification |

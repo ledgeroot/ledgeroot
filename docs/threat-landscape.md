@@ -1,12 +1,13 @@
 # Agent 支付证据层 —— 威胁全景
 
 > 建立日期：2026-09-17
-> 最近修订：2026-09-17（第四次）—— ⚠️ **新增学术与标准层调研（见 [standards-landscape.md](./standards-landscape.md)）：支柱 1 与支柱 2 均已被正式规格化。** OAP（arXiv 2603.20953）占据了"执行前确定性授权"，Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`）占据了"非省略证明"且机制更完整。§五 D1 重写为指向新文档的摘要，§七 半衰期与 §八 支柱、§九 行动清单、§十 监控同步改写
+> 最近修订：2026-09-18（第五次）—— ⚠️ **新增 §三 B3：AWS Bedrock AgentCore payments 已 GA（2026-08-18）。这是本分类法第一次失灵——一个 B 类玩家同时吃掉了 C 类的能力面（授权 + 执行前确定性校验 + 审计留痕），且它已实现 MPP、覆盖付费 API/MCP/内容/pay-per-inference 这些正是 §零 生态位的用例。** §一 摘要、§九 接入清单、§十 监控同步更新；另有一条比全部更根本的推论：**"费率结构护城河"只挡按比例抽成的对手，挡不住把支付当平台功能送的云厂商。** 详见 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md)
+> 第四次修订：2026-09-17 —— ⚠️ **新增学术与标准层调研（见 [standards-landscape.md](./standards-landscape.md)）：支柱 1 与支柱 2 均已被正式规格化。** OAP（arXiv 2603.20953）占据了"执行前确定性授权"，Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`）占据了"非省略证明"且机制更完整。§五 D1 重写为指向新文档的摘要，§七 半衰期与 §八 支柱、§九 行动清单、§十 监控同步改写
 > 第三次修订：2026-09-17 —— **对照当前源码逐条复核：Ledgeroot 已追平 Traceipt 的密码学实现**（§C1 的旧对比表有 4 项已失效，见"状态修正"）；§C2–C6 补齐 EVIDIQ / TrustBench 同名撞车 / agentstamp / Vaultra 一手情报；新增 §五 D 类的 NovaFabric 与一批 2026 年论文；§七 半衰期、§九 行动清单、§十 监控、附录同步更新
 > 第二次修订：2026-09-17 —— 新增 §三 B2 **卡组织威胁**（Visa TAP / Mastercard Agent Suite / Stripe MPP，与 Coinbase 同类但握有企业客户关系）
 > 前次修订：§四 C1 重写（Traceipt → BlueTier Operations 双产品线）；新增 x402b / Pieverse 情报；半衰期表新增"预行动闸门已被占据"；行动清单新增 RFC 6962 等四项
 > 适用范围：Ledgeroot / MandateKey
-> 关联文档：[vaara-competitive-analysis.md](./vaara-competitive-analysis.md) · [standards-landscape.md](./standards-landscape.md) · [roadmap.md](./roadmap.md) · [commercialization.md](./commercialization.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md)
+> 关联文档：[aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md) · [vaara-competitive-analysis.md](./vaara-competitive-analysis.md) · [standards-landscape.md](./standards-landscape.md) · [roadmap.md](./roadmap.md) · [commercialization.md](./commercialization.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md)
 > 调研方法：官网 / 规范原文 / **源码逐行通读** / npm 下载量 / GitHub API / IETF 草案 / 二手信源交叉核对
 
 ---
@@ -18,10 +19,14 @@
 | 类别 | 代表 | 性质 | 应对 |
 |---|---|---|---|
 | **A. 载波** | PEAC Protocol、x402 Receipt Attestation 草案 | 证据层的**外壳标准**，不碰支付/策略/路由 | **接入，不对抗** |
-| **B. 分发垄断者** | Coinbase（Bazaar / Agentic.Market / CDP）、**卡组织（Visa TAP / Mastercard Agent Suite / Stripe MPP）** | 拥有发现层、轨道层，**且卡组织直接握有企业客户关系** | **被索引，不对抗** |
+| **B. 分发垄断者** | Coinbase（Bazaar / Agentic.Market / CDP）、**卡组织（Visa TAP / Mastercard Agent Suite / Stripe MPP）**、**⚠️ AWS（Bedrock AgentCore payments，§三 B3）** | 拥有发现层、轨道层，**且直接握有企业客户关系** | **被索引，不对抗** |
 | **C. 直接技术竞品** | **Vaara（§C7，最强）**、**APort / OAP**、BlueTier（Black_Wall + Traceipt）、EVIDIQ、TrustBench（**同名四家**）、agentstamp | 与 Ledgeroot 在同一能力面竞争 | **正面竞争，靠差异化** |
 | **D. 相邻/间接** | SpendGate、Infopunks、Dexter、PayAI、x402scan… · **学术论文层**（NovaFabric 等，§五 D1） | 不同层面；**论文层几乎无商业威胁，是思路来源** | **监控 / 借鉴，按需合作** |
 | **E. 监管时钟** | EU AI Act 第 12 条 | 定义需求的时间表 | **对齐，但别过度承诺** |
+
+> ⚠️ **第五次修订：这张表的分类前提在 AWS 身上失灵了。** 原来的两分法是"B 类只管分发、不碰能力面（所以不对抗）；C 类只在能力面竞争（所以正面对抗）"。**AWS 同时是两者**：它握有分发与采购（Marketplace + 既有企业账号 + CloudFront/Cloudflare 边缘），又把三根支柱的表述全部占住（payment session = mandate、Payment guardrail = 策略引擎、Observability 自称 "payment audit trails"）。
+>
+> **所以对 B3 的应对既不是"被索引"（它本身就是索引），也不是"正面竞争"（我们没有渠道）。** 唯一可行的位置是**它结构上不会去的那一层**：不参与交易、不属于任何云、可断网独立验证的中立证据层。理由见 §三 B3 与 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md) §6.3。
 
 **最重要的判断**：Ledgeroot 的早期差异化能力（收据签名、Merkle 锚定、离线验证）**已经被标准化 —— 而且我们已追平**（2026-09-18 源码复核：RFC 6962 域分隔、Ed25519 签名、三态纪律、链上结算校验、第 6 段交付证明、锚定权限控制**均已实现**）。这三项不再是差异化，不要再拿它们做定位。
 
@@ -210,6 +215,60 @@ Coinbase 结构上**不会**做本地优先、零外泄、不可见的证据层�
 | 它们把审计能力锁在自家闭环内 | 中立证据层的生存空间被挤压 |
 
 > **置信度：中。** 以上信息来自二手信源（聚合报道与对比文章），**未查卡组织的一手规范**。需要在你方决策前核实。
+
+---
+
+### B3. AWS —— Bedrock AgentCore payments（⚠️ 第五次修订新增，本类里最强的威胁）
+
+> 📌 **本节来源：AWS 官方 GA 博客与 `docs.aws.amazon.com` 官方文档页，均为本次直接抓取的一手页面。** 逐维度对比、弱点与行动建议在 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md)。
+
+| 项 | 内容 |
+|---|---|
+| 状态 | **已 GA（2026-08-18）**；2026-05 与 Coinbase / Stripe 合作 preview |
+| 定位 | AgentCore 生产栈补齐支付一环：Runtime / Memory / Identity / Gateway / Policy / Observability **+ Payments** |
+| 授权 | **Payment session**：`maxSpendAmount` + `currency` + expiry；**过期或超限后会话内后续支付被拒** |
+| 强制 | 官方原文：*"The check is **deterministic** and runs at the **infrastructure layer**"*；凭据存 Secrets Manager，**agent 看不到原始凭据** |
+| 协议 | **x402 v1 + v2 + MPP**，另加 x402 的 **`upto`** scheme（先授上限、按实际用量结算 → pay-per-inference / 动态定价） |
+| 审计 | CloudWatch 日志 / span / 预置看板，官方称 **payment audit trails**；失败记为 `FAILED` |
+| 钱包 | Coinbase CDP / Stripe Privy；**法币入金**（卡、Apple Pay、Google Pay、ACH）+ 钱包 Hub + Quick Create |
+| 分发 | **AWS Marketplace 采购 + 既有企业账号** + CloudFront / Cloudflare 边缘 + Coinbase Bazaar 策展发现 + **Strands / LangGraph / OpenClaw / OpenAI Agents SDK 插件** |
+| 已公布客户 | Anchor Browser、**Travala（旅行 MCP）**、Elsa AI、Heurist AI、SpreadX/Incarna（经 BlockRun） |
+
+**为什么它是本类最强、且与 B1/B2 不同**
+
+- B1（Coinbase）与 B2（卡组织）**拥有分发但不做证据层**——所以"被索引，不对抗"成立。
+- **AWS 两者都做。** 它不但拥有分发与采购，还**把一个 GA 产品放在了我们三根支柱的能力面上**：授权、执行前确定性校验、审计留痕——**这三句正是 `roadmap.md` §三 给 SAFR 做的映射句式。**
+- 而且它**已经实现了 MPP**（我们只有接缝），并把 x402 `upto` 做成一等公民。
+
+**⚠️ 它推翻了我们自己的一条论证**
+
+`commercialization.md` §零 说这个位"由费率结构保证"——$0.30 + 2.9% 摊在 $0.005 上是 6000%，物理不可行。
+
+> **这条论证排除的是按交易金额抽成的对手（卡组织 / Stripe），不排除云厂商。** 云厂商按请求 / 算力 / 服务订阅计费，**与支付金额解耦**——AWS 不需要这笔 $0.005 在经济上成立，它需要的是**这个 agent workload 跑在 AWS 上**（官方话术：*"Making AWS the best place to build the world's most useful AI agents"*）。
+>
+> → **护城河挡住的是"抽成型"对手，挡不住"把支付当平台功能送"的对手，而后者是最有钱、最有渠道的那一类。** 这是本次调研对我们自己战略文档最重要的一处修订。
+
+**它没跨过去的那一格（= 我们的位置）**
+
+**它的"审计轨迹"是某家厂商云里的日志，不是可被第三方独立验证的密码学证据。** 日志证明"AWS 记录了这些"，**不证明记录完整、未被更改、且第三方可复核**。而 **AWS 是这笔交易的当事人**（持有凭据、编排支付、指示签名），**因此结构上不能同时是验证的中立第三方**——与"记账人不能同时是审计师"同理。
+
+| | 记账 / 传输 | 独立证据 |
+|---|---|---|
+| 网络 | TLS | Certificate Transparency（不参与加密，只提供可公开验证的记录） |
+| 财务 | 记账人 | 审计师（不能是同一方） |
+| **Agent 支付** | **AgentCore payments / 卡组织轨道** | **Ledgeroot** |
+
+**观察信号**
+
+| 信号 | 含义 |
+|---|---|
+| AgentCore payments 引入**签名收据 / 离线验证 / 锚定** | ⚠️ **我们的证据面差异在分发层被抹平 → 最高级别警报** |
+| 会话升级为**用户可签名的可验证凭据** | 用户自签 vs 厂商签发的差异收窄 |
+| 支持**对手方白名单 / payTo 绑定** | 我们最锋利的功能性差异（注入转账）被补齐 |
+| **Marketplace 上架第三方证据层** | ✅ **OEM 窗口打开 → 主动接触**（与 B2 同一形态） |
+| CloudFront / Cloudflare 边缘化货币化**暴露按请求的收据** | 边缘层成为证据层 → 载体化机会 |
+
+> **置信度：高（一手为官方博客与官方文档页）**；但"不按交易金额抽成"为**中**（未查定价页，由产品形态推断），§6.2 的结论依赖它。
 
 ---
 
@@ -667,6 +726,17 @@ Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页）§6
 - [ ] ❗ **实现独立重铸／逐字节复现**（对标 Vaara v1.14.0 independent re-mint）——**见 `roadmap.md` N11**
 - [ ] ❗ **重排发布优先级**：对手 **5 个月做到 v1.50.0**，我们的可见性与可验证性工程不能继续排在最后
 
+### ❗ AWS 相关（2026-09-18 新增，依据 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md)）
+
+- [ ] ❗ **实现 MPP provider 与结算校验**——**AWS 已 GA 支持 MPP，"等规范与真实需求"的条件已满足**；见 `roadmap.md` **P1-8 的 A1**
+- [ ] ❗ **定 MPP Sessions 下的 epoch 边界语义**（N:1 结算 vs 按 `receiptCount` 切片）——见 `roadmap.md` **Q9**，**必须与 A1 同一批决策，否则返工**
+- [ ] ❗ **支持 x402 `upto` scheme**，让报价漂移对"上限"判定——**这是 `upto` 缺的那个校验，也是我们对 AWS 唯一可正面宣传的功能性差异**；见 `roadmap.md` **P1-8 的 A3**
+- [ ] ❗ **收据支持"外部授权引用"字段**，使证据层能覆盖**别人编排的支付**（AWS session / 钱包方 grant）；见 `roadmap.md` **P1-8 的 A4**
+- [ ] ❗ **把 AgentCore payment session 做成可导入授权**（仿 AP2 导入路径），补上它没有的对手方绑定 / 报价漂移；见 `roadmap.md` **P1-8 的 A5**
+- [ ] **接 Coinbase Bazaar 的策展发现面**（它已通过 AgentCore Gateway 暴露为 MCP server）——零成本的"被索引"动作
+- [ ] **读通 `CreatePaymentSession` / `CreatePaymentInstrument` / `ProcessPayment` 的载荷形状**——外部控制面的第一个真实形状
+- [ ] **N10 单文件断网验证器优先级上调**——对手是超大规模厂商时，"**验证不是一项服务**"是唯一不靠渠道就能成立的论证
+
 ### 进攻（护城河）
 
 - [ ] 叙事从"我们有锚定收据"改为 **"我们证明授权被执行，且证明没有遗漏"**
@@ -684,6 +754,12 @@ Vaara Receipt（`draft-sirkkavaara-vaara-receipt-10`，2026-09-04，28 页）§6
 
 | 观察对象 | 触发条件 | 含义 |
 |---|---|---|
+| **AWS（B3）** | AgentCore payments 引入**签名收据 / 离线验证 / 锚定** | ⚠️ **最高级别警报**：我们的证据面差异在分发层被抹平 |
+| **AWS（B3）** | 会话升级为**用户可签名的可验证凭据** | 用户自签 vs 厂商签发的差异收窄 |
+| **AWS（B3）** | 支持**对手方白名单 / payTo 绑定** | 最锋利的功能性差异（注入转账）被补齐 |
+| **AWS（B3）** | Marketplace **上架第三方证据层** | ✅ **OEM 窗口打开 → 主动接触** |
+| **AWS（B3）** | 定价从"服务订阅"改为**按交易金额抽成** | §6.2 的推论需重估（护城河可能重新成立） |
+| **AWS / Cloudflare 边缘** | 货币化网关**暴露按请求的收据** | 边缘层成为证据层 → 载体化机会 |
 | **PEAC** | 规范出现 anchoring / 完整性机制 | 支柱被吸收 → 重新定位 |
 | **PEAC** | 移除或放宽 `iat` 5 分钟窗口 | 其离线审计能力增强 → 压力上升 |
 | **x402 官方** | 采纳 `SettlementResponse.attestation` 字段 | 收据层进入官方规范 → 载体化 |

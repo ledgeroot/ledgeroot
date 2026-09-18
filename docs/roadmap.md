@@ -1,7 +1,8 @@
 # Ledgeroot 行动规划
 
 > 制定日期：2026-09-17
-> 依据文档：[commercialization.md](./commercialization.md) · [architecture-gaps.md](./architecture-gaps.md) · [standards-landscape.md](./standards-landscape.md) · [threat-landscape.md](./threat-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)
+> 最近修订：2026-09-18（第五次补充）—— ⚠️ **新增 §一 第 12 条前提（AWS Bedrock AgentCore payments 已 GA）、§2.4 的 N13–N15、§五 的 P1-8（A1/A3/A4/A5）、§十 的 Q9、§十一 监控触发**。**其中"费率结构护城河挡不住云厂商"一条推翻了 §零 生态位论证的一部分。** 详见 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md)
+> 依据文档：[aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md) · [commercialization.md](./commercialization.md) · [architecture-gaps.md](./architecture-gaps.md) · [standards-landscape.md](./standards-landscape.md) · [threat-landscape.md](./threat-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)
 > 适用范围：Ledgeroot（engine）+ MandateKey（dashboard）
 > 排序原则：**先正确性，再差异化，再可见性，最后公信力** —— 前者是后者的前提
 > 商业化定位：**开源内核 + 企业控制面 + 对账与聚合层**；本期不启动商业化，只做架构留缝
@@ -24,6 +25,7 @@
 | ⏸ **B 类整组（规模问题）** | 索引、批量、分区、聚合——**黑客松后**。见 [architecture-gaps.md](./architecture-gaps.md) §二 |
 | ⏸ **「多笔微支付聚合对账」demo（P1-6）** | 演示场景见 `demo场景清单` §二 第 6 项。**黑客松后**——届时补齐聚合查询 / 可下钻 / 对账导出；赛内只用 `taskId` 做「N 笔 / 总额 / 拦截数」分组 |
 | ⏸ **N 系列（竞品对齐项）** | RFC 3161、held-set completeness、单文件验证器——**黑客松后** |
+| ⏸ **P1-8（协议补齐：MPP / `upto` / 外部授权引用）** | **黑客松后**——它会动到验证分派与 **epoch 边界语义（Q9）**，赛内不碰协议层 |
 
 > 📌 **为什么选 Monad 不是凑数**：Monad 的定位是高吞吐 + 低费用，而 **agent 小额支付正是唯一真正需要那个吞吐量的工作负载**（每秒数百笔 $0.005，在吞吐与费率不够的链上光 gas 就不可行）。**它和 §一 第 0 条的生态位本来就对齐。** 详见 [architecture-gaps.md](./architecture-gaps.md) §D1a。
 
@@ -51,6 +53,9 @@
 9. **"transaction authorization" 已是学术通用术语**（SoK 2604.15367 的 D2 维度，明确映射 AP2/ACP/MPP/x402），不再是可占位的概念。
 10. ⚠️ **（第四次修订二）性质判断更正：这些不是"学术界"，是厂商在售产品。** APort 定价 **$499 / $4,990 月费**；**Vaara 是 AGPL 自托管 + 付费 pilot + 商业许可**。
 11. ⚠️ **（第四次修订二）牵引排序更正**：**Vaara ≈2,164 次/周**（PyPI 1,495 + npm 669），**APort 614**，而原判断里"唯一有真实牵引"的 BlueTier 只有 **111**。**Vaara 是它的 20 倍。** 而且 **Vaara 建仓 2026-04-20，5 个月到 v1.50.0**。
+12. ⚠️ **（第五次新增，性质最严重）AWS 把三根支柱的表述面全占了。** **Amazon Bedrock AgentCore payments 已于 2026-08-18 GA**：**payment session**（= mandate：`maxSpendAmount` + currency + expiry）、**deterministic 的基础设施层限额检查**（= 策略引擎）、自带 **"payment audit trails"** 的 Observability（= 收据），并**已实现 MPP** 与 x402 的 **`upto`** scheme。它的官方用例（付费 API / MCP 工具 / 付费内容 / pay-per-inference）**就是 §零 定义的那个生态位**。
+    → ⚠️ **它同时推翻了 §零 护城河论证的一半**：费率结构排除**按交易金额抽成**的对手（卡组织 / Stripe），**不排除按负载计费、把支付当平台功能送的云厂商**。详见 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md) §6.2。
+    → **唯一守住的位置**：**不做控制面，做它结构上不会去的中立证据层**——AWS 是这笔交易的当事人（持有凭据、编排支付、指示签名），**因此不能同时是验证的中立方**。
 
 **结论（第四次修订二）**：Ledgeroot 不能靠"我们有锚定收据"取胜，**也不能再靠"我们证明没有遗漏"取胜**，**也不能靠"我们本地优先"取胜**——三者都已被 Vaara 占据。**唯一剩下的一格是"支付专用的用户签名授权 + 零出境"。** 同时必须承认：**对手的发布节奏比我们快一个数量级**，`§一` 原有的排序原则（正确性 → 差异化 → 可见性 → 公信力）在无订单但有标准位争夺的情况下需要重排。
 
@@ -100,6 +105,7 @@
 - 任何生态提交（Bazaar、Agentic.Market、MCP Registry）
 - PEAC 兼容
 - 多 facilitator / 多链
+- ❗ **协议与接口补齐（P1-8）**：**MPP 支持**、**x402 `upto` scheme**、**收据的外部授权引用 + 外部控制面授权导入**
 - ERC-8004 接入（`Mandate.agentId` 字段已埋，未接注册表）
 - 收据规范发布
 - 可复现基准
@@ -122,6 +128,9 @@ P0 修完后，与对手之间**仍然真实存在**的差距只剩这几项。�
 | **N10** ❗ | **单文件断网验证器**（浏览器直接验、收据不出本机） | **Vaara Resin**——单 HTML、WebCrypto、断网可用，原文 "verification is not a service and Vaara is not a party to it" | ❌ 无 | 这是"零出境"最彻底的证明形式；**我们的支柱 3 叙事缺这一块就说不圆** |
 | **N11** ❗ | **独立重铸 / 逐字节复现**（第二个实现仅凭规范化规则重现签名载体） | **Vaara v1.14.0 independent re-mint**；50 套公开一致性套件 | ❌ 无 | "独立实现能复现"的最强形式，比"有 checker"更硬 |
 | **N12** ❗ | **发布节奏**（对手 5 个月从建仓到 v1.50.0） | Vaara 2026-04-20 建仓 → 2026-09 v1.50.0 | ⚠️ 见 §一 排序原则 | 不是能力差距而是**节奏差距**；可见性与可验证性工程不能继续排最后 |
+| **N13** ❗ | **MPP provider 与结算校验** | **AWS（B3，已 GA 支持 MPP）** / Stripe + Tempo 规范 | ❌ 只有 `segments.tx.protocol` 接缝 | ⚠️ **AWS 已 GA 支持 MPP，就是我们预留接缝时写的"等规范和真实需求"里的那个需求信号。** 且 AWS 在协议广度上领先我们一个身位 |
+| **N14** ❗ | **x402 `upto` scheme 支持** | **AWS（GA 时引入）** | ❌ 无 | `upto` = 先授上限、按实际用量结算。**报价漂移策略正是它缺的那个校验**——这是我们对 AWS 唯一可正面宣传的功能性差异 |
+| **N15** ❗ | **外部授权引用 + 外部控制面授权导入** | **AWS AgentCore payment session** / 钱包方 grant | ❌ 无（`mandateId` 仅是本地标识） | 控制面开始属于别人。**没有这个字段，证据层无法覆盖别人编排的支付**——也就无法成为"站在 AgentCore 后面"的那一层 |
 
 > 📌 **N6 = 原支柱 2。** 它从"我们独有的卖点"变成了"必须补上的工程差距"。**N7 是 N2 与 N6 的共同前置条件**——审计师要能独立验证，就必须有向量和独立 checker。
 >
@@ -535,6 +544,34 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
   - **没有完整性证明，分布式聚合只能"相信 agent 上报的数字"** —— 而那是 §零 生态位里最不能接受的事
   - → **N6 因此不只是竞品对齐项，它是 P1-6 能否成立的前提。** 见 §2.4 的 N6 与 [standards-landscape.md](./standards-landscape.md) §二
 
+### P1-8. 协议与接口补齐：MPP、x402 `upto`、外部授权引用（2026-09-18 新增）⭐ 优先级高于 P1-5 / P1-6
+
+> **触发来自 AWS**（依据 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md) §7.2），**但性质不是竞品对齐，而是覆盖面**：这三项决定**我们的证据层能不能覆盖别人编排的支付**。AWS 已经 GA 了一个占住我们能力面的产品，而它——以及 MPP 规范本身——的编排会继续扩散。
+>
+> **一句话说明它为什么是 P1 而不是可有可无**：**x402 之外的轨道、按量结算的报价、别人签发的授权，这三样现在都不在我们的证据覆盖范围内。** 缺了它们，Ledgeroot 只能给"我们自己发起的 x402 支付"出证据，而生态位的现实正在变成"支付由别人编排"。
+
+**A1. MPP provider 与结算校验**
+
+- **现状**：`segments.tx.protocol` 维度已存在，`verifySettlement` / `checkSettlement` 对非 x402 一律报 `incomplete`（[architecture-gaps.md](./architecture-gaps.md) §七 的接缝）。
+- **为什么现在**：**AWS 已 GA 支持 MPP。** 我们预留接缝时写的条件是"等 MPP 规范与真实需求"——**需求信号到了。**
+- **做什么**：读 MPP 规范全文 → 实现 `MppPaymentProvider`（`PaymentProvider` 接口已在 `src/x402/facilitator.ts`）→ 实现 `mpp` 的结算校验，替换两处 `incomplete` 分支。
+- **涉及**：`src/x402/facilitator.ts`、`src/verify/verifier.ts`、`src/verify/onchain.ts`、`src/types.ts`、`src/tools/pay.ts`
+- **验收**：MPP 收据验证返回 `verified` 而非 `incomplete`；**未知协议仍报 `incomplete`**（不能为了支持新协议放宽旧纪律）。
+- ⚠️ **前置：Q9 必须先定。**
+
+**A3. x402 `upto` scheme 支持**
+
+- **做什么**：接受 `upto` 报价；把**上限**与**实扣**分别记进 `segments.plan.quote`；报价漂移对**上限**判定而非固定报价。
+- **涉及**：`src/policy/defaults.ts`（`quote-drift`）、`src/tools/pay.ts`、`src/types.ts`（`segments.plan`）
+- **验收**：`upto` 场景下"实扣 > 上限"被拒、"实扣 ≤ 上限"放行，且上限与实扣**都留在收据里**。
+- **战略意义**：`upto` 把"先授上限、按量结算"做成一等公民，**而报价漂移正是它缺的那个校验**。这是我们对 AWS 唯一可正面宣传的功能性差异。
+
+**A4 / A5. 外部授权引用与外部控制面导入**
+
+- **做什么**：`segments.mandate` 增加**外部授权引用**字段（如 `externalRef`）；新增一种"外部授权"导入形态（仿 `ledgeroot_mandate_import` 的 AP2 路径）。
+- **涉及**：`src/types.ts`、`src/mandate.ts`、`src/tools/mandate.ts`、`src/consistency.ts`（一致性分析要能读外部引用）
+- **验收**：一份由**外部控制面**（AWS session / 钱包方 grant）授权的支付，其收据能引用该授权，**且仍能被我们的五条策略再校验一遍**——这才是"站在 AgentCore 后面补它没有的对手方绑定"的具体形态。
+
 ---
 
 ## 六、P2：可见性与互操作
@@ -615,7 +652,7 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 | 里程碑 | 内容 | 达成标志 |
 |---|---|---|
 | **M1 — 可信** | P0 全部完成 | 三态验证真实可用；`verify` 在正常使用下不误报；链上校验能识别伪造 txHash；Merkle 通过 RFC 6962 测试向量 |
-| **M2 — 不可替代** | P1 全部完成 | 能演示"删除一张收据 → 验证报错"；第三方可在无网络环境独立验证一张收据 |
+| **M2 — 不可替代** | P1 全部完成 | 能演示"删除一张收据 → 验证报错"；第三方可在无网络环境独立验证一张收据；**MPP 与 x402 `upto` 的支付都能出收据并验证为 `verified`（而不是 `incomplete`）** |
 | **M3 — 可见** | P2 全部完成 | 出现在 Bazaar / Agentic.Market / MCP Registry；PEAC L3 兼容 |
 | **M4 — 被引用** | P3 启动 | 收据规范公开；可复现基准发布 |
 
@@ -633,6 +670,7 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 | **Q6** | **P0-8 的排序修复用哪个方案？**（新增 `seq` 列 vs 依赖 `rowid`） | 是否做 schema 迁移 | 待定，推荐方案 A |
 | **Q7** 🎯 | **零外泄 vs 聚合的边界在哪里？**（架构评估新增，见 [architecture-gaps.md](./architecture-gaps.md) §C1） | ⚠️ **决定控制面 schema 与 P1-6 的数据模型** | **待定——但必须在 P1-6 之前决定，否则返工** |
 | **Q8** | **现在上多写 / 多租户，还是先做单 agent？** | ⚠️ 决定 `seq` 分配与访问层要不要现在重做（见 P0-10、`architecture-gaps.md` §B3 §B4） | 待定，**越晚越贵** |
+| **Q9** 🎯 | **MPP Sessions 下的 epoch 边界语义是什么？**（N:1 结算 vs 当前按 `receiptCount` 切片、假定每张收据彼此独立） | ⚠️ **决定锚定与完整性证明在 MPP 下是否还成立**；也决定无链上交易的收据如何进入 Merkle 树 | **待定——必须在 P1-8 的 A1 之前定，否则返工**（[architecture-gaps.md](./architecture-gaps.md) §7.4 已预警同一处碰撞） |
 
 > 🔴 **Q7 是当前最关键的未决项。** `commercialization.md` §零 的产品是"跨 fleet 的账"，而架构是"每 agent 本地一个 SQLite"——**跨 fleet 聚合需要把 N 个 agent 的数字汇到一处，而"一处"就是服务器**，这与"零外泄"和"控制面只看元数据"的设计原则存在张力。三条候补方案（元数据集中 / 收据复制 / 每 agent 自算 rollup + 锚定链接）见 [architecture-gaps.md](./architecture-gaps.md) §C1，**推荐第三条**，因为它同时保住了零外泄与可验证性。
 >
@@ -644,7 +682,11 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 
 | 触发 | 含义 | 应对 |
 |---|---|---|
-| PEAC 规范出现 anchoring / 完整性机制 | 支柱 2 被吸收 | 重新定位 |
+| **AWS AgentCore payments 引入签名收据 / 离线验证 / 锚定** | ⚠️ **最高级别警报**：我们的证据面差异在分发层被抹平 | 重估定位 |
+| **AWS Marketplace 上架第三方证据层** | ✅ **OEM 窗口打开** | 主动接触 |
+| **AWS 支持对手方白名单 / payTo 绑定** | 最锋利的功能性差异被补齐 | 重估差异化 |
+| **AWS 定价从服务订阅改为按交易金额抽成** | §零 的费率结构论证可能重新成立 | 重估生态位 |
+| **PEAC 规范出现 anchoring / 完整性机制** | 支柱 2 被吸收 | 重新定位 |
 | x402 官方采纳 `SettlementResponse.attestation` | 收据层载体化 | 加速 PEAC 接入 |
 | BlueTier 的 Traceipt 增加非省略证明或用户签名授权 | 支柱 1/2 同时受威胁 | 评估差异化是否还成立 |
 | BlueTier 的 Black_Wall 提供本地/自托管部署 | 支柱 3 受威胁 | 同上 |
@@ -676,6 +718,8 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 | **P1-1 的优先级** | `commercialization.md` §四 —— **完整性证明同时是商业论点本身，不是 nice-to-have**；⭐ **并见 P1-7：它还是分布式聚合的承重墙** |
 | **P1-2 的必要性** | `commercialization.md` §五 留缝 1 —— 第三方独立验证是"卖报告"的前置条件 |
 | **N1–N12（§2.4）** | `standards-landscape.md` §二 §七、`vaara-competitive-analysis.md` §三 §七 |
+| **N13–N15 / P1-8（A1·A3·A4·A5）/ Q9** | **`aws-agentcore-payments-analysis.md` §7.2** —— AWS Bedrock AgentCore payments GA（2026-08-18），一手来源 |
+| **§一 第 12 条（护城河的 AWS 形状的洞）** | **`aws-agentcore-payments-analysis.md` §6.2** |
 
 > **商业化对路线图的影响**：见 [commercialization.md](./commercialization.md)。
 > ⚠️ **第六次修订更正**：此处原写"P1-1（完整性证明）的优先级被商业化逻辑进一步抬高 —— 它是**唯一可售的差异点**"。**该表述已失效**（Vaara v1.4.0 已产品化同类机制，见 [standards-landscape.md](./standards-landscape.md) §二）。

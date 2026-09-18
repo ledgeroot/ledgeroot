@@ -338,9 +338,10 @@ docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方
 
 | 文档 | 内容 |
 |---|---|
+| [aws-agentcore-payments-analysis.md](./docs/aws-agentcore-payments-analysis.md) | **AWS Bedrock AgentCore payments（2026-08-18 GA）深度分析**：第一个同时是分发垄断者与能力竞品的对手，以及它在我们"费率结构护城河"上打出的洞 |
 | [architecture-gaps.md](./docs/architecture-gaps.md) | 源码级架构评估：已修的真 bug（崩溃窗口 / `seq` 分配）、规模差距、多协议接缝 |
-| [roadmap.md](./docs/roadmap.md) | 行动规划：P0 正确性（D1–D8 已清）→ P1 差异化 → P2 可见性 → P3 公信力；含待定决策 Q1–Q8 |
-| [threat-landscape.md](./docs/threat-landscape.md) | 威胁全景：载波（PEAC / x402 草案 / IETF）、分发垄断者、直接竞品、监管时钟 |
+| [roadmap.md](./docs/roadmap.md) | 行动规划：P0 正确性（D1–D8 已清）→ P1 差异化 → P2 可见性 → P3 公信力；含待定决策 Q1–Q9 |
+| [threat-landscape.md](./docs/threat-landscape.md) | 威胁全景：载波（PEAC / x402 草案 / IETF）、分发垄断者（Coinbase、卡组织、**AWS**）、直接竞品、监管时钟 |
 | [standards-landscape.md](./docs/standards-landscape.md) | 学术与标准层调研：OAP、Vaara Receipt、x402 与 MPP 并列支持的依据 |
 | [vaara-competitive-analysis.md](./docs/vaara-competitive-analysis.md) | 最接近的对手：自托管 + 断网单文件验证 + held-set completeness |
 | [trustbench-competitive-analysis.md](./docs/trustbench-competitive-analysis.md) | 同名撞车与逐条源码核验 |
