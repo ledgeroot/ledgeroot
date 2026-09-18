@@ -1,195 +1,353 @@
 # Ledgeroot
 
-> **行业造好了锁，没人造钥匙圈；造好了刹车，没人造黑匣子。**
+**English** · [中文](./README.zh-CN.md)
 
-MCP 支付插件 + 证据引擎。装进 Claude Code / opencode 等任意 MCP 宿主，agent 即获得受约束的 x402 支付能力：每笔支付执行前经过策略校验（fail-closed），执行后自动生成六段式审计收据，epoch Merkle 根上链锚定。拒付尝试同样留痕。
+> **The industry built the locks, but nobody built the keyring. It built the brakes, but nobody built the black box.**
+
+**An MCP payment plugin and evidence engine.** Drop it into Claude Code, opencode, or any other MCP host and the agent gains *constrained* x402 payment capability: every payment is checked against policy **before** it executes (fail-closed) and produces a six-segment audit receipt **after**. Epoch Merkle roots are anchored on-chain. **Blocked attempts leave a trace too** — a denial produces a receipt.
 
 > **Every agent payment, on the record.**
 
-Ledgeroot 是「机芯 + 仪表盘」双件结构的**机芯**。仪表盘见 [mandatekey](../mandatekey)。
+Ledgeroot is the **movement** in a movement-and-dial pair. The dial is [MandateKey](../mandatekey).
 
 ---
 
-## SAFR 对齐（MAS《Safeguards for Agentic Finance at Runtime》）
+## 1. Where it sits
 
-Ledgeroot 的三层架构与 MAS SAFR 白皮书的三个运行时保障功能一一对应——我们在没有看到这份文档之前就独立实现了同一套架构：
+**Niche: on-chain stablecoins × agent micro-402 payments** (unit price $0.001–$0.05, on the order of a million payments a month).
 
-| SAFR 功能 | Ledgeroot 实现 |
+The niche is guaranteed by **fee structure**, not by technical superiority: a $0.30 + 2.9% card fee spread across a $0.005 payment is 6000% — **physically impossible**. That is why x402 exists, and why we **don't do large-value payments**. Large payments come with invoices, contracts and refund flows, and that ground belongs to Shopify, Stripe, Visa TAP and Mastercard.
+
+Within that niche Ledgeroot does exactly three things:
+
+| Does | Doesn't |
 |---|---|
-| 身份与权限（establish agent's identity and authority） | mandate（EIP-712 签名授权令）+ `ledgeroot_mandate_sign` |
-| 执行前评估（evaluate agent actions against controls before execution） | 策略引擎（fail-closed，五条默认策略）+ `ledgeroot_pay` 前置校验 |
-| 审计留痕（maintain a clear audit record） | 六段收据 + RFC 8785 哈希链 + epoch Merkle 根上链 + `ledgeroot_verify` 离线三态验证 |
+| **Authorization** — a user-signed mandate caps what the agent may spend, to whom, and until when | ❌ **No custody** — the private key never leaves the machine |
+| **Pre-execution checks** — a fail-closed policy engine with five default policies | ❌ **No router or discovery layer** — that layer is already taken |
+| **Audit trail** — six-segment receipts + hash chain + on-chain anchoring + offline tri-state verification | ❌ **No LLM inference gate** — determinism is precisely our advantage |
 
-> SAFR 是自愿性框架（2026-07-03 发布）；真正有约束力的是 MAS 即将定稿的 AI 风险管理指南（覆盖 agentic AI）。两层都值得对齐——我们现在就按 SAFR 的三层实现。
+> 📌 At this granularity a **receipt is not the product** (a ten-thousandth of $0.005) — it is **raw material**. Only the layer that turns receipts into a **ledger** can be charged for. That positioning does **not** lower the bar on the receipt engineering: the layer above can only be trusted if every receipt beneath it verifies independently.
+
+### Aligned with MAS SAFR
+
+Ledgeroot's three layers map one-to-one onto the three runtime safeguards in MAS's *Safeguards for Agentic Finance at Runtime* — **we implemented the same architecture independently, before seeing that document**:
+
+| SAFR safeguard | Ledgeroot |
+|---|---|
+| establish agent's identity and authority | mandate (EIP-712 signed authorization) + `ledgeroot_mandate_sign` |
+| evaluate agent actions against controls before execution | policy engine (fail-closed, five default policies) + the pre-check inside `ledgeroot_pay` |
+| maintain a clear audit record | six-segment receipts + RFC 8785 hash chain + epoch Merkle root on-chain + offline tri-state `ledgeroot_verify` |
+
+> SAFR is a voluntary framework (published 2026-07-03); what will actually bind is MAS's forthcoming AI risk-management guidance covering agentic AI. Both are worth aligning with — so we implement SAFR's three layers now.
 
 ---
 
-## 六段收据
+## 2. The six-segment receipt
 
-`意图 → 授权 → 计划 → 调用 → 交易哈希 → 交付凭证`
+`intent → mandate → plan → call → transaction → delivery`
 
-- 段间由 RFC 8785 哈希链互锁（每张收据回指上一张的 `receiptHash`）
-- **每张收据带 Ed25519 detached 签名**：JWS 式 `protected` 头，签名覆盖 `{payload, protected}`，因此 `alg` / `kid` 落在被签字节内不可替换；公钥以 JWKS 发布（`npx ledgeroot jwks`），第三方无需连回即可验签。哈希链证"内容没被改"，签名证"谁做的陈述"
-- epoch Merkle 根由 25 行锚定合约提交上链；锚定记录该根覆盖的收据数，因此之后新增支付不会让校验误报
-- **单张收据可取 RFC 6962 包含证明**（`merkleProof` / `verifyMerkleProof`）：第三方只拿一张收据，就能证明它属于已锚定的那个 epoch，不必交出其余账本
-- 第六段只在调用方回报响应体时写入（`ledgeroot_pay` 的 `responseBody`），只存哈希与字节数，不存原文
-- `npx ledgeroot verify` 离线三态验证（`verified / tampered / incomplete`），不经过任何服务器
-- `npx ledgeroot verify --check-chain` 额外按 `txHash` 拉链上交易，比对 USDC 合约、付款方、收款方与金额；节点不可达时报 `incomplete` 而非 `tampered`
+| Segment | What goes in | Where it lands |
+|---|---|---|
+| 1. **Intent** | a natural-language statement of why the agent is paying | `segments.intent.text` |
+| 2. **Mandate** | the authorization covering this payment + the **policy intersection** (which policies the mandate actually constrained) | `segments.mandate` |
+| 3. **Plan** | canonical hash of the original 402 quote, plus the quote itself (`amount` / `payTo` / `endpoint`) | `segments.plan` |
+| 4. **Call** | **the verdict of every policy**, both the passing and the denying ones | `segments.call.policyResults` |
+| 5. **Transaction** | settlement protocol + `txHash` + `chainId` + `payer` | `segments.tx` |
+| 6. **Delivery** | **the hash and byte size** of the response body — never the body itself | `segments.delivery` |
 
-## 五条默认策略（fail-closed）
+A few things are deliberate:
 
-1. **对手方白名单** — 只付 mandate 里列出的 x402 网关
-2. **payTo 绑定** — 结算地址必须与 mandate 绑定一致
-3. **报价漂移** — 实际扣款与 402 报价的偏差不得超过阈值
-4. **端点限速** — 每个端点限制调用频率
-5. **限额** — 单笔上限 + 累计上限
+- **Segments are interlocked by RFC 8785 canonical hashing.** Each receipt carries a `prevHash` pointing back at the previous receipt's `receiptHash`. The log is append-only and cannot be updated in place — a receipt's `id` *is* the canonical hash of its content, so changing one byte makes it a different receipt.
+- **Every receipt carries a detached Ed25519 signature** with a JWS-style `protected` header. The signature covers `{payload, protected}`, so `alg` and `kid` sit **inside the signed bytes** and cannot be swapped after the fact. `kid` is the public key's **RFC 7638 JWK thumbprint** — the identifier is derived from the key itself, so it needs no registry and cannot drift away from the key.
+- **The hash chain proves the content was not changed; the signature proves who made the statement.** They are independent: tamper with the content and re-hash it, and the chain still verifies — only the signature catches it.
+- Public keys are published as **JWKS** (`npx ledgeroot jwks`) and shipped inside the evidence bundle, so a third party can verify signatures **without calling home**.
+- **Segment 6 can only be reported by the caller** (`responseBody` on `ledgeroot_pay`). Ledgeroot settles the payment but **never fetches the resource** — only the agent sees the response body, so only the caller can supply its hash.
 
-## 十个 `ledgeroot_*` 工具
+### The signing key is separate from the payment key
 
-| 工具 | 作用 |
+| Variable | Job | If unset |
+|---|---|---|
+| `LEDGEROOT_PRIVATE_KEY` | **Moves money**: signs EIP-3009 authorizations and submits anchor transactions | cannot pay |
+| `LEDGEROOT_SIGNING_KEY` | **Only makes statements**: signs receipts | **receipts are unsigned → `verify` reports `incomplete`, not `verified`** |
+
+They deliberately **do not fall back to each other**: one key moves money, the other attests to what happened, and neither can do the other's job. Evidence that cannot be attributed should not read as `verified`.
+
+---
+
+## 3. Tri-state verification (offline first)
+
+Verification **depends on no server** — `ledgeroot verify` reads the local database and recomputes.
+
+| Status | Meaning |
 |---|---|
-| `ledgeroot_pay` | 受约束 x402 支付（幂等去重 + 任务关联），出六段收据；传 `responseBody` 可让第六段覆盖交付 |
-| `ledgeroot_mandate_sign` | 本地私钥现场签发授权令 |
-| `ledgeroot_mandate_import` | 导入 AP2 风格授权令 |
-| `ledgeroot_mandate_list` | 列出有效授权 |
-| `ledgeroot_mandate_revoke` | 撤销授权（一键熔断） |
-| `ledgeroot_receipt_list` | 列出收据 |
-| `ledgeroot_receipt_get` | 取单张收据 |
-| `ledgeroot_verify` | 离线验证证据链 + 锚定；置 `checkChain` 可额外核对链上结算 |
-| `ledgeroot_anchor` | 提交 epoch Merkle 根上链 |
-| `ledgeroot_export` | 导出证据包 |
+| `verified` | every check passed |
+| `tampered` | **bytes were checked and do not match** — self-hash mismatch / broken `prevHash` link / a first receipt carrying `prevHash` / recomputed epoch root ≠ anchored root / receipts missing from an anchored epoch / signature mismatch / unsupported `alg` |
+| `incomplete` | **evidence is missing or unobtainable** — unsigned / no public key for that `kid` / a paid receipt with no `txHash` / an anchor with no boundary / unknown settlement protocol / unreachable node |
 
-## 幂等与任务关联
+**This boundary is the single most important discipline in the product**: `tampered` outranks `incomplete`, and **unobtainable evidence is never reported as tampering**. Reporting a network failure as tampering would destroy the credibility of the whole alarm; conversely, treating missing evidence as a pass would claim a check that never ran.
 
-`ledgeroot_pay` 接受两个可选关联键：
+**On-chain settlement checking is opt-in** (`--check-chain` / `checkChain: true`): the offline path stays synchronous and network-free; only the chain check reaches for RPC.
 
-- `requestId`（幂等去重）——同一个 `requestId` 重试时，直接返回**已有收据**（`deduplicated: true`），不会二次扣款。去重是查本地 append-only 账本，而不是查链。
-- `taskId`（意图链）——把多笔支付归到同一个用户任务下；仪表盘按任务聚合展示「N 笔 / 总额 / 拦截数」。
+| On-chain check verdicts |
+|---|
+| transaction not found → `tampered` (there is no such payment on chain) |
+| **node unreachable → `incomplete`** (cannot read ≠ does not exist) |
+| transaction reverted / `to` is not the USDC contract / the call is not a `transferWithAuthorization` / `to`·`value`·`from` disagree with the receipt's payTo·amount·payer → `tampered` |
+| a non-x402 settlement protocol → `incomplete` (see §6) |
 
-这两层补上了支付原语（x402）回答不了的问题：**「重试先查原交易」** 和 **「这笔钱属于哪次任务」**。
+**Anchor boundaries**: an epoch root covers "the receipts that existed at submission time" (`receiptCount`). Verification slices back to that boundary before recomputing, so **payments made after an anchor do not read as tampering**; conversely, fewer receipts present than the recorded count → `tampered` (that is a deletion).
 
-## 快速开始
+---
+
+## 4. The five default policies (fail-closed)
+
+Each attack shape has the policy that catches it:
+
+1. **Counterparty whitelist** — only pay x402 gateways listed in the mandate
+2. **payTo binding** — the settlement address must match the mandate (**this is the one that stops a prompt-injected transfer**)
+3. **Quote drift** — the amount charged may not drift from the 402 quote beyond a threshold (10% by default)
+4. **Endpoint rate limit** — cap call frequency per endpoint
+5. **Amount limits** — a per-payment ceiling plus a cumulative ceiling
+
+**What the constraints mean**: an empty whitelist or an empty `payTo` list means **unconstrained**, not deny-everything; rate limiting only applies when the mandate sets `endpointRateLimit`; the two amount limits always apply. `ledgeroot_mandate_import` **intersects** the mandate's constraints with the policies registered locally and records that intersection in segment 2.
+
+The engine runs **every** policy and records every verdict, returning the first denial. Amounts always go through `decimal.ts` — **bigint arithmetic over six-decimal units**; money never touches a float.
+
+**Of these, the ones a chain cannot express are quote drift, endpoint rate limits, cumulative ceilings (structuring) and the denial record.** A chain knows addresses, not hosts or quotes, and does not record "attempts that were blocked". That is the reason this layer exists.
+
+---
+
+## 5. Idempotency, the crash window, and task grouping
+
+The x402 rail and the local database **are not one transaction**. Ledgeroot closes the gap with two optional correlation keys:
+
+### `requestId` — idempotency, claimed **before the money moves**
+
+The naive version ("write the receipt after settling, dedupe by looking up receipts on retry") has a fatal window: if the process dies **after settlement but before the receipt is on disk**, the money moved, nothing was recorded, and `requestId` finds nothing — so the retry **pays a second time**. That loses both the evidence and the money, which is exactly what the product claims to prevent.
+
+So `requestId` is consumed **at attempt time**, not at success time:
+
+| Step | Action |
+|---|---|
+| 1 | an existing receipt matches → **replay it** (`deduplicated: true`), no second charge |
+| 2 | after policies allow, **before the money moves**: claim the id in the out-of-chain `payment_intents` table |
+| 3 | **claim fails** (the key is taken, meaning an earlier attempt's outcome was never recorded) → **deny**, and write a `denied` receipt |
+| 4 | settle → write the receipt → release the claim |
+
+**Why a failed claim must deny rather than retry**: that row means "**we do not know whether that payment settled**". Refusing to spend is recoverable; paying twice is not.
+
+> ⚠️ The pre-write record **can only live outside the chain**: a receipt's `id` is its content hash, so flipping `status` from `pending` to `paid` changes the hash, and the next receipt's `prevHash` would point at a hash that no longer exists. The log is append-only — in-place updates are structurally impossible.
+>
+> ⚠️ **Pass no `requestId` and you get none of this protection** — there is nothing to key the attempt on. Idempotency has to be asked for.
+
+### `taskId` — the intent chain
+
+Groups several payments under one user task; the dashboard aggregates them as "N payments / total / N blocked".
+
+### Revocation
+
+`ledgeroot_mandate_revoke` revokes a single mandate; the store also exposes a **one-click kill switch** (`revokeAllMandates`) for control planes to call. The next payment after revocation is denied **and recorded**.
+
+---
+
+## 6. Known limits
+
+The honest section. These are limits of the **current implementation**, not a repudiation of the design intent; the ordering and trade-offs are recorded in [roadmap.md](./docs/roadmap.md).
+
+| Limit | Current state |
+|---|---|
+| **The chain is hard-coded** | `MONAD_TESTNET_X402` is the only instance, and no environment variable can switch chains or USDC contracts. The `FacilitatorNetworkConfig` type already extracts chainId / network / scheme / USDC / domain, so **this is adding instances rather than refactoring** — but it makes "testnet → mainnet" a code change instead of a config change today |
+| **MPP is a seam, not an implementation** | `segments.tx.protocol` is an explicit dimension: **an unknown protocol reports `incomplete`** — neither waved through nor wrongly accused. But MPP's field-level shape is undecided (the spec has not been read end to end), so no payload shape is assumed and no provider exists |
+| **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
+| **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
+| **Testnet anchoring produces no evidentiary value** | A testnet block time is not an external authority. Mainnet, or an RFC 3161 qualified timestamp, is the follow-up |
+| **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](../mandatekey) evidence bundle |
+| **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
+| **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
+| **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
+| **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
+
+---
+
+## 7. The anchor contract
+
+`contracts/src/LedgerootAnchor.sol` — the only contract in the project, storing **a 32-byte root, a back-pointer and an epoch counter**, and nothing else.
+
+- **Owner-gated**: `anchor()` is `onlyOwner`. An open `anchor()` reduces "this root is on chain" to "somebody anchored something here" — an attacker could publish a forged root, or displace the honest one so that valid receipts verify as `tampered`. The owner is the **anchoring wallet** (derived from `LEDGEROOT_PRIVATE_KEY`), not the deployer, so the two keys can be separated.
+- **The contract owns the epoch**: `lastEpoch` increments on every anchor, and clients read it from the contract instead of counting locally — otherwise a fresh database would label its first anchor "epoch 1" no matter how far the contract has already run.
+- **RFC 6962 MTH for Merkle**: leaves are `SHA-256(0x00 ‖ d)`, internal nodes `SHA-256(0x01 ‖ L ‖ R)`, split at the largest power of two below n (no duplicating an odd trailing node). **Domain separation** is what buys second-preimage resistance. Tests cross-check against the stack-based algorithm in RFC 9162 §2.1.2 as an independent oracle.
+- Deployed to Monad testnet (chainId 10143). One deployment used for demos: `0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30` (owner `0x055A…A8f7`) — **a testnet address that may be redeployed at any time; trust your own `.env`**.
+
+---
+
+## 8. The ten `ledgeroot_*` tools
+
+| Tool | What it does |
+|---|---|
+| `ledgeroot_pay` | Constrained x402 payment (idempotent dedupe + task grouping), producing a six-segment receipt; pass `responseBody` to have segment 6 cover delivery |
+| `ledgeroot_mandate_sign` | Sign an authorization with the local key on the spot (`id` is optional and auto-generated) |
+| `ledgeroot_mandate_import` | Import an AP2-style authorization (**a failed signature check is an outright rejection**) |
+| `ledgeroot_mandate_list` | List active authorizations |
+| `ledgeroot_mandate_revoke` | Revoke one authorization (the one-click kill switch) |
+| `ledgeroot_receipt_list` | List receipts (filter by mandate / status / endpoint) |
+| `ledgeroot_receipt_get` | Fetch a single receipt |
+| `ledgeroot_verify` | Offline verification of the evidence chain + anchor; `checkChain` additionally confirms settlements against the chain |
+| `ledgeroot_anchor` | Submit the epoch Merkle root on-chain |
+| `ledgeroot_export` | Export the evidence bundle (receipts + root + anchor record + public keys + verification verdict) |
+
+---
+
+## 9. Getting started
 
 ```bash
 npm install
 npm run build
 
-# CLI（离线验证 / 导出证据包）
-node dist/cli.js verify
-node dist/cli.js export
+# CLI (offline verification / evidence export / anchoring / public keys)
+node dist/cli.js verify [--db <path>] [--check-chain]
+node dist/cli.js export [--db <path>]
+node dist/cli.js anchor [--db <path>]
+node dist/cli.js jwks
 
-# 作为 MCP server 接入宿主（stdio）
+# Run as an MCP server for a host (stdio)
 node dist/cli.js serve
 ```
 
-### 环境变量
+### Dry-run demo (zero setup)
 
-| 变量 | 说明 |
-|---|---|
-| `LEDGEROOT_DB` | SQLite 数据库路径（默认 `ledgeroot.sqlite`） |
-| `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator HTTP 地址（默认 `https://x402-facilitator.molandak.org`） |
-| `LEDGEROOT_RPC_URL` | Monad testnet RPC（默认 `https://testnet-rpc.monad.xyz`） |
-| `LEDGEROOT_ANCHOR_ADDRESS` | 锚定合约地址（未设置则锚定离线） |
-| `LEDGEROOT_PRIVATE_KEY` | 支付 + 锚定签名私钥（永不出本机） |
-| `LEDGEROOT_SIGNING_KEY` | 收据签名密钥（32 字节 hex 种子）。**与支付密钥分离**——支付密钥动钱，这把只做陈述。**未设置则收据不签名，验证会报 `incomplete`** |
-| `LEDGEROOT_DRY_RUN` | 设为 `true` 启用仿真：零钱包零 USDC 跑全流程（假 tx + 一次性私钥） |
-
-## 在 Claude Code 中使用
-
-装进 Claude Code 后，agent 获得受约束的支付能力，用户用自然语言管理授权。
-
-```bash
-# 一次性安装（发版后可直接 npx；本地开发用 node 指向 dist/cli.js）
-claude mcp add ledgeroot \
-  --env LEDGEROOT_PRIVATE_KEY=0x你的私钥 \
-  --env LEDGEROOT_DB=/绝对路径/ledgeroot.sqlite \
-  -- npx ledgeroot serve
-```
-
-之后全程对话：
-
-1. **签发授权**：说「给它授权 5 USDC 买 agent402.tools 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认 → 授权令签好存库。
-2. **agent 花钱**：说「帮我调研 X，要买付费数据」→ agent 自动 `ledgeroot_pay` → 策略校验 → facilitator 结算 → 六段收据。
-3. **撤销**：说「撤销它的授权」→ `ledgeroot_mandate_revoke`。
-4. **审计**：说「查收据 / 验证证据」→ `ledgeroot_receipt_list` / `ledgeroot_verify`。
-
-> 自然语言解析由宿主（Claude）完成，ledgeroot 只提供结构化、确定性的工具；私钥通过 `--env` 传入，永不出本机。
-
-## 仿真演示（dry-run，零门槛）
-
-不用钱包、不用 USDC、不用网络，一条命令跑完整闭环（签发 → 支付 → 幂等重试 → 注入拦截 → 熔断 → 离线验证）：
+No wallet, no USDC, no network — one command runs the whole loop:
 
 ```bash
 LEDGEROOT_DRY_RUN=true npm run demo
 ```
 
-## 真实支付演示（Monad testnet）
+It walks through: **① sign a mandate → ② a normal payment (producing a six-segment receipt) → ③ retrying with the same `requestId` replays the receipt (no second charge) → ④ a prompt injection is blocked (trying to drain the budget to an unbound address) → ⑤ one-click kill switch → ⑥ a payment after revocation is denied → ⑦ offline verification + evidence bundle.**
 
-前置：`ledgeroot/.env` 配好 `LEDGEROOT_PRIVATE_KEY`，钱包里已有测试网 USDC（Circle faucet）。
+### Real payment demo (Monad testnet)
+
+Prerequisites: `LEDGEROOT_PRIVATE_KEY` set in `.env`, and testnet USDC in the wallet (Circle faucet).
 
 ```bash
-# 策略放行 → 真实 USDC 支付 → 出六段收据
-npm run demo:pay -- <payTo地址> 0.001
-
-# 查看收据链 + 离线验证
+npm run demo:pay -- <payTo address> 0.001
 npm run verify -- --db ./ledgeroot.sqlite
 ```
 
-`demo:pay` 会：写入一条演示 mandate → 跑 `ledgeroot_pay` 全流程 → 过五条策略 → 本地签 EIP-3009 `transferWithAuthorization` → 经 facilitator `/verify` + `/settle` 上链结算（facilitator 代付 gas）→ 打印六段收据。
+`demo:pay` writes a demo mandate → runs the full `ledgeroot_pay` flow → clears all five policies → signs an EIP-3009 `transferWithAuthorization` locally → settles on-chain through the facilitator's `/verify` + `/settle` (the facilitator sponsors gas) → prints the six-segment receipt.
 
-## 锚定合约 + 上链
-
-`contracts/src/LedgerootAnchor.sol` — 全项目唯一合约，只存 32 字节根 + 回指针。部署到 Monad testnet（chainId 10143）。
+### Anchoring on-chain
 
 ```bash
-# 0. 安装 Foundry（如未安装）
+# 0. Install Foundry if you don't have it
 #    curl -L https://foundry.paradigm.xyz | bash && foundryup
 
-# 1. 编译 + 测试合约
+# 1. Build and test the contract (forge-std is a git submodule)
 forge install foundry-rs/forge-std
-forge build
-forge test
+forge build && forge test
 
-# 2. 部署（二选一）
-#   a) Foundry 原生
+# 2. Deploy (either route)
+#    a) the viem script (reads the forge build artifact; owner derives from LEDGEROOT_PRIVATE_KEY)
+LEDGEROOT_DEPLOYER_PRIVATE_KEY=... npm run deploy:monad
+#    b) native Foundry (the constructor wants initialOwner — pass the anchoring wallet address)
 forge create contracts/src/LedgerootAnchor.sol:LedgerootAnchor \
   --rpc-url https://testnet-rpc.monad.xyz \
-  --private-key $LEDGEROOT_DEPLOYER_PRIVATE_KEY
-#   b) 或 viem 脚本（自动读取 forge build 产物）
-LEDGEROOT_DEPLOYER_PRIVATE_KEY=... npm run deploy:monad
+  --private-key $LEDGEROOT_DEPLOYER_PRIVATE_KEY \
+  --constructor-args <anchoring wallet address>
 
-# 3. 把部署地址写进 .env
-#    LEDGEROOT_ANCHOR_ADDRESS=0x...
-
-# 4. 上链锚定当前所有收据的 epoch Merkle 根
+# 3. Put the address in .env: LEDGEROOT_ANCHOR_ADDRESS=0x...
+# 4. Anchor the epoch Merkle root of every receipt so far
 npm run build && npm run anchor -- --db ./ledgeroot.sqlite
-
-# 5. 离线验证收据链 + 锚定
+# 5. Verify the receipt chain and the anchor offline
 npm run verify -- --db ./ledgeroot.sqlite
 ```
 
-`anchor` 把当前收据的 Merkle 根提交到链上并记录交易哈希；`verify` 离线重放校验收据链与锚定根。
+### Using it from Claude Code
 
-## 仓库结构
+```bash
+claude mcp add ledgeroot \
+  --env LEDGEROOT_PRIVATE_KEY=0xyour-private-key \
+  --env LEDGEROOT_SIGNING_KEY=0xyour-receipt-signing-key \
+  --env LEDGEROOT_DB=/absolute/path/ledgeroot.sqlite \
+  -- npx ledgeroot serve
+```
+
+From there it is all conversation:
+
+1. **Issue an authorization**: say "authorize it to spend 5 USDC on agent402.tools data" → Claude calls `ledgeroot_mandate_sign` → you confirm → the mandate is signed and stored.
+2. **The agent spends**: say "research X for me, buy the paid data" → the agent calls `ledgeroot_pay` on its own → policies run → the facilitator settles → six-segment receipt.
+3. **Revoke**: say "revoke its authorization" → `ledgeroot_mandate_revoke`.
+4. **Audit**: say "show me the receipts / verify the evidence" → `ledgeroot_receipt_list` / `ledgeroot_verify`.
+
+> Natural-language parsing is the host's job (Claude's). Ledgeroot only exposes structured, deterministic tools; the private key is passed via `--env` and stays on the machine.
+
+### Using it as a library
+
+```ts
+import { PolicyEngine, defaultPolicies, merkleProof, verifyMerkleProof } from "ledgeroot";
+import { LedgerootStore } from "ledgeroot/store";
+import { verifyReceiptChain } from "ledgeroot/verify";
+```
+
+Subpath exports: `ledgeroot` · `/store` · `/verify` · `/anchor` · `/receipt` · `/types`. The library **does not load `.env`** — the environment belongs to the caller (only the CLI and server entry points call `loadEnv()`).
+
+---
+
+## 10. Environment variables
+
+| Variable | Meaning |
+|---|---|
+| `LEDGEROOT_DB` | SQLite database path (defaults to `ledgeroot.sqlite`) |
+| `LEDGEROOT_PRIVATE_KEY` | The key that **moves money**: payment signing + anchor submission. Never leaves the machine |
+| `LEDGEROOT_SIGNING_KEY` | The **receipt signing** key (32-byte hex seed), deliberately separate from the payment key. **If unset, receipts are unsigned and verification reports `incomplete`** |
+| `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator endpoint (defaults to `https://x402-facilitator.molandak.org` — public, no API key) |
+| `LEDGEROOT_RPC_URL` | Monad testnet RPC (defaults to `https://testnet-rpc.monad.xyz`) |
+| `LEDGEROOT_ANCHOR_ADDRESS` | Anchor contract address (anchoring is unavailable without it) |
+| `LEDGEROOT_DEPLOYER_PRIVATE_KEY` | Used only by `deploy/monad.ts`; the contract owner derives from `LEDGEROOT_PRIVATE_KEY` |
+| `LEDGEROOT_ANCHOR_BYTECODE` | Bytecode for deployment; falls back to the `forge build` artifact |
+| `LEDGEROOT_DRY_RUN` | `true` enables simulation: the full loop with no wallet and no USDC (fake transactions, throwaway key — **never for real payments**) |
+
+---
+
+## 11. Repository layout
 
 ```
 src/
-  policy/    策略引擎 + 五条默认策略 + Zod schema
-  receipt/   六段收据构建 + RFC 8785 哈希链
-  anchor/    Merkle 树 + 锚定器（viem）
-  verify/    离线三态验证器
-  store/     SQLite append-only 存储
-  wallet/    本地密钥库 / 外部钱包适配
-  x402/      facilitator HTTP 集成点
-  tools/     十个 ledgeroot_* MCP 工具
-  env.ts     环境加载 + dry-run 开关
-  mandate.ts EIP-712 授权令（签发 / 验签 / 取交集）
-  consistency.ts 授权-执行一致性分析
-scripts/     demo（全流程演示）/ pay-demo / deploy
-contracts/   LedgerootAnchor（Solidity 0.8.24 + Foundry）
-deploy/      Monad testnet 部署配置
+  policy/        policy engine + the five default policies + Zod schemas
+  receipt/       six-segment receipt builder + RFC 8785 hash chain + Ed25519 signing (JWKS / thumbprint kid)
+  anchor/        RFC 6962 Merkle (root / inclusion proofs) + anchorer (viem)
+  verify/        offline tri-state verifier + on-chain settlement content checks (ERC-3009 decoding)
+  store/         SQLite append-only store (receipts / mandates / anchors / payment_intents)
+  wallet/        local key store / external wallet adapter
+  x402/          facilitator integration (EIP-3009 authorization + /verify + /settle)
+  tools/         the ten ledgeroot_* MCP tools
+  mandate.ts     EIP-712 authorization (sign / verify / policy intersection)
+  consistency.ts post-hoc authorization-vs-execution analysis (did any paid receipt exceed its mandate)
+  decimal.ts     USDC six-decimal bigint arithmetic, no floating point
+  env.ts         environment loading + the dry-run switch
+  cli.ts         verify / export / anchor / jwks / serve
+scripts/         demo (dry-run, full loop) / pay-demo (real payment) / deploy
+contracts/       LedgerootAnchor (Solidity 0.8.24 + Foundry)
+deploy/          Monad testnet deployment config
+docs/            architecture review / roadmap / competitor and standards research / commercialization
 ```
 
-## 许可
+---
+
+## 12. Design and research documents
+
+> 📌 These documents are written in Chinese; there are no English versions yet.
+
+| Document | Contents |
+|---|---|
+| [architecture-gaps.md](./docs/architecture-gaps.md) | Source-level architecture review: the real bugs that were fixed (the crash window, `seq` allocation), scaling gaps, the multi-protocol seam |
+| [roadmap.md](./docs/roadmap.md) | The action plan: P0 correctness (D1–D8 closed) → P1 differentiation → P2 visibility → P3 credibility; includes open decisions Q1–Q8 |
+| [threat-landscape.md](./docs/threat-landscape.md) | Threat landscape: carriers (PEAC / the x402 draft / IETF), distribution monopolists, direct competitors, the regulatory clock |
+| [standards-landscape.md](./docs/standards-landscape.md) | Academic and standards research: OAP, Vaara Receipt, and the case for supporting x402 and MPP side by side |
+| [vaara-competitive-analysis.md](./docs/vaara-competitive-analysis.md) | The closest competitor: self-hosted + offline single-file verification + held-set completeness |
+| [trustbench-competitive-analysis.md](./docs/trustbench-competitive-analysis.md) | A name collision, and a line-by-line source verification |
+| [commercialization.md](./docs/commercialization.md) | The niche, four trade-offs, the commercial layering, and what we must **not** do now |
+
+---
+
+## License
 
 MIT
