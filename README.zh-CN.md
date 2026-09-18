@@ -1,22 +1,133 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ledgeroot-logo-dark.svg">
+  <img src="assets/ledgeroot-logo-light.svg" alt="Ledgeroot" width="244">
+</picture>
+
 # Ledgeroot
 
-**中文** · [English](./README.md)
+### 面向 agent x402 支付的 MCP 支付插件 + 证据引擎
 
-> **行业造好了锁，没人造钥匙圈；造好了刹车，没人造黑匣子。**
+**Every agent payment, on the record.**
 
-**MCP 支付插件 + 证据引擎。** 装进 Claude Code / opencode 等任意 MCP 宿主，agent 即获得受约束的 x402 支付能力：每笔支付**执行前**过策略校验（fail-closed），**执行后**自动生成六段式审计收据，epoch Merkle 根上链锚定。**被拦下的尝试同样留痕**——拒付也出收据。
+[![CI](https://github.com/ledgeroot/ledgeroot/actions/workflows/ci.yml/badge.svg)](https://github.com/ledgeroot/ledgeroot/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/ledgeroot)](https://www.npmjs.com/package/ledgeroot)
+![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![MCP](https://img.shields.io/badge/MCP-server-informational)
+![x402](https://img.shields.io/badge/x402-payments-blueviolet)
 
-> **Every agent payment, on the record.**
+[English](./README.md) · **中文**
 
-Ledgeroot 是「机芯 + 仪表盘」双件结构的**机芯**。仪表盘见 [MandateKey](../mandatekey)。
+</div>
 
 ---
 
-## 一、它站在哪一格
+## 看它拦下一笔被提示注入的支付
+
+```text
+$ LEDGEROOT_DRY_RUN=true npm run demo
+
+1. 签发授权令 → demo-mandate（issuer 0x19E7…ff2A）
+2. 正常支付 → paid，0.1 USDC 付给 agent402.tools/search
+3. 同 requestId 重试 → paid，deduplicated: true（不再扣款）
+4. 提示注入转账 → denied：payTo "0x…dead" is not bound by the mandate
+5. 一键熔断 → 已撤销 1 条授权
+6. 熔断后支付 → denied：unknown mandate "demo-mandate"
+7. 离线验证 → verified，3 张收据，0 个问题
+```
+
+> 摘自一次真实运行；第 4、6 行是收据里 `reason` 字段的**原文**（拒付原因由代码以英文写出）。**被拒付也是一张收据**——第 4、6 步各自带签名留痕，所以账本最后是 3 张收据，且离线验证依然干净。
+
+不用钱包、不用 USDC、不用网络、不用注册账号。完整闭环就是这些：授权 → 约束 → 支付 → 拒付 → 熔断 → 离线验证。
+
+---
+
+## 快速开始
+
+### 1. 离线跑完整闭环（60 秒）
+
+```bash
+npm install
+npm run build
+LEDGEROOT_DRY_RUN=true npm run demo
+```
+
+### 2. 接进 Claude Code
+
+```bash
+claude mcp add ledgeroot \
+  --env LEDGEROOT_PRIVATE_KEY=0x你的私钥 \
+  --env LEDGEROOT_SIGNING_KEY=0x收据签名密钥 \
+  --env LEDGEROOT_DB=/绝对路径/ledgeroot.sqlite \
+  -- npx ledgeroot serve
+```
+
+之后全程对话：
+
+1. **签发授权**：说「给它授权 5 USDC 买 agent402.tools 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认。
+2. **agent 花钱**：说「帮我调研 X，要买付费数据」→ agent 调 `ledgeroot_pay` → 策略校验 → facilitator 结算 → 六段收据。
+3. **撤销**：说「撤销它的授权」→ `ledgeroot_mandate_revoke`。
+4. **审计**：说「验证证据」→ `ledgeroot_verify`。
+
+> 自然语言解析由宿主完成。Ledgeroot 只提供结构化、确定性的工具；私钥经 `--env` 传入并留在本机。
+
+### CLI
+
+```bash
+node dist/cli.js verify [--db <path>] [--check-chain]   # 离线验证（可选加链上校验）
+node dist/cli.js export [--db <path>]                   # 导出证据包 JSON
+node dist/cli.js anchor [--db <path>]                   # 提交 epoch Merkle 根上链
+node dist/cli.js jwks                                   # 第三方验签所需的 JWKS
+node dist/cli.js serve                                  # 以 stdio 启动 MCP server
+```
+
+### 作为库使用
+
+```ts
+import { PolicyEngine, defaultPolicies, merkleProof, verifyMerkleProof } from "ledgeroot";
+import { LedgerootStore } from "ledgeroot/store";
+import { verifyReceiptChain } from "ledgeroot/verify";
+```
+
+子路径导出：`ledgeroot` · `/store` · `/verify` · `/anchor` · `/receipt` · `/types`。库本身**不加载 `.env`**——环境由调用方掌握（只有 CLI 与 server 入口调 `loadEnv()`）。
+
+### 真实支付与上链锚定
+
+```bash
+# Monad testnet。需要 LEDGEROOT_PRIVATE_KEY 与测试网 USDC（Circle faucet）。
+npm run demo:pay -- <payTo地址> 0.001
+npm run verify -- --db ./ledgeroot.sqlite
+
+# 锚定 epoch 根（合约需要 Foundry；forge-std 是 git submodule）
+forge install foundry-rs/forge-std && forge build && forge test
+LEDGEROOT_DEPLOYER_PRIVATE_KEY=... npm run deploy:monad   # owner 由 LEDGEROOT_PRIVATE_KEY 推导
+npm run anchor -- --db ./ledgeroot.sqlite
+```
+
+---
+
+## 为什么用 Ledgeroot
+
+- **fail-closed 是结构性的。** 每条策略都跑，第一个拒绝即中止支付，并且**拒绝本身也被记录**。不存在"跳过一次检查然后放行"的路径。
+- **可验证，不只是有日志。** 收据带 Ed25519 签名、哈希链互锁、commit 到链上 epoch Merkle 根。第三方**离线**即可验证——不连回、不经手任何厂商。
+- **拒付也是证据。** 被拦下的尝试与成功的支付产生同样格式的签名收据。那是 agent 任务失败唯一能被看见的地方。
+- **一把钥匙动钱，一把钥匙作证。** 收据签名密钥与支付密钥刻意不互相回落。
+- **钱不碰浮点。** 全程六位小数 bigint 运算。
+- **对"不知道"诚实。** 证据缺失报 `incomplete`，**绝不报成被篡改**，也绝不放行。
+- **证明的是执行，不只是意图。** 一致性视图会把已付收据拿回它所属的 mandate 再校验一遍。
+- **MIT、本地 SQLite、无 SaaS、无遥测。** 什么都不会离开本机。
+
+---
+
+## 它站在哪一格
 
 **生态位：链上稳定币 × agent 小额 402 支付**（单价 $0.001–$0.05，百万笔/月量级）。
 
-这个位由**费率结构**保证，不由技术优势保证：$0.30 + 2.9% 的卡组织费率摊在 $0.005 上等于 6000% 手续费，**物理上不可行**。所以 x402 存在；也所以我们**不做大额**——大额有发票、合同、退款流程，那是 Shopify / Stripe / Visa TAP / Mastercard 的地盘。
+这个位由**费率结构**保证，不由技术优势保证：$0.30 + 2.9% 的卡组织费率摊在 $0.005 上等于 6000%，**物理上不可行**。所以 x402 存在；也所以我们**不做大额**——大额有发票、合同、退款流程，那是 Shopify / Stripe / Visa TAP / Mastercard 的地盘。
+
+> ⚠️ 费率结构排除的是**按交易金额抽成**的对手，**不排除**按负载计费、把支付当平台功能送的云厂商——见 [aws-agentcore-payments-analysis.md](./docs/aws-agentcore-payments-analysis.md) §6.2。
 
 在这个位里，Ledgeroot 只做三件事：
 
@@ -40,9 +151,16 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 
 > SAFR 是自愿性框架（2026-07-03 发布）；真正有约束力的是 MAS 即将定稿的 AI 风险管理指南（覆盖 agentic AI）。两层都值得对齐——我们现在就按 SAFR 的三层实现。
 
+### 能接什么
+
+- **任意 MCP 宿主** —— Claude Code、opencode，以及任何说 MCP 的宿主（这是我们唯一维护的集成面）。
+- **x402 网关** —— 包括已上 Coinbase Bazaar 的那些。
+- **目前是 Monad testnet** —— chainId 10143，facilitator 为 `x402-facilitator.molandak.org`。换链是补一个配置实例，不是重写；见[已知边界](#已知边界)。
+- **AP2 风格授权令** —— 可导入外部签名授权，并与本地策略取交集。
+
 ---
 
-## 二、六段收据
+## 六段收据
 
 `意图 → 授权 → 计划 → 调用 → 交易哈希 → 交付凭证`
 
@@ -74,7 +192,7 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 
 ---
 
-## 三、三态验证（离线优先）
+## 三态验证（离线优先）
 
 验证**不依赖任何服务器**，`ledgeroot verify` 直接读本地库重算。
 
@@ -93,18 +211,18 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 | 交易不存在 → `tampered`（链上没有这笔） |
 | **节点连不上 → `incomplete`**（读不到 ≠ 不存在） |
 | 交易回滚 / `to` 不是 USDC 合约 / 调用不是 `transferWithAuthorization` / `to`·`value`·`from` 与收据的 payTo·amount·payer 不符 → `tampered` |
-| 非 x402 的结算协议 → `incomplete`（见 §六） |
+| 非 x402 的结算协议 → `incomplete`（见[已知边界](#已知边界)） |
 
 **锚定边界**：epoch 根覆盖的是「提交那一刻已存在的收据数」（`receiptCount`）。验证按该边界切片重算，所以**锚定之后再发生支付不会误报篡改**；反过来，已锚定的收据少于记录数 → `tampered`（是删除）。
 
 ---
 
-## 四、五条默认策略（fail-closed）
+## 五条默认策略（fail-closed）
 
 攻击形态各有对应的那条：
 
 1. **对手方白名单** —— 只付 mandate 里列出的 x402 网关
-2. **payTo 绑定** —— 结算地址必须与 mandate 绑定一致（**这是拦住提示注入转账的那一条**）
+2. **payTo 绑定** —— 结算地址必须与 mandate 绑定一致（**拦住上面 demo 里那笔提示注入转账的就是这一条**）
 3. **报价漂移** —— 实际扣款与 402 报价的偏差不得超过阈值（默认 10%）
 4. **端点限速** —— 每个端点限制调用频率
 5. **限额** —— 单笔上限 + 累计上限
@@ -117,7 +235,7 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 
 ---
 
-## 五、幂等、崩溃窗口与任务关联
+## 幂等、崩溃窗口与任务关联
 
 x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联键补上支付原语回答不了的问题：
 
@@ -150,26 +268,27 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 
 ---
 
-## 六、已知边界
+## 已知边界
 
 诚实部分。这些是**当前实现**的边界，不是设计意图的否定；对应的排序与取舍记录在 [roadmap.md](./docs/roadmap.md)。
 
 | 边界 | 现状 |
 |---|---|
 | **链是硬编码的** | `MONAD_TESTNET_X402` 是唯一实例，没有环境变量能切链或换 USDC 合约。`FacilitatorNetworkConfig` 类型已把 chainId / network / scheme / USDC / domain 全抽出来，所以**这是补实例而非重构**——但它让「测试网 → 主网」目前是改代码而不是改配置 |
-| **MPP 只有接缝，没有实现** | `segments.tx.protocol` 是显式维度：**未知协议报 `incomplete`，不放行也不冤枉**。但 MPP 的字段级形状未定（未读规范全文），所以没有预设载荷，也没有 provider |
+| **MPP 只有接缝，没有实现** | `segments.tx.protocol` 是显式维度：**未知协议报 `incomplete`，不放行也不冤枉**。但 MPP 的字段级形状未定，所以没有预设载荷，也没有 provider。**这是 [roadmap.md](./docs/roadmap.md) 里排在第一位的待补项** |
 | **热路径未加索引** | 全库没有一个 `CREATE INDEX`：单笔支付有 4 次未索引全表扫描，其中两次还会 `JSON.parse` 整个匹配集。单笔 O(n)，一个月 O(n²) |
 | **单进程、单租户** | 一个库、一把签名钥、一把付款钥。数据模型里没有租户边界——`agentId` / `mandateId` 不是隔离键 |
 | **测试网锚定不产生证据价值** | 测试网的区块时间不是外部权威。主网或补 RFC 3161 合格时间戳是后续动作 |
 | **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](../mandatekey) 的证据包里 |
 | **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
+| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、100 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
 | **没有聚合层** | 全库没有一处 SQL 聚合（无 `GROUP BY` / `SUM` / `COUNT`），也没有对账导出。这是生态位里唯一能收费的那一层，目前**完全不存在** |
 | **ERC-8004 只埋了字段** | `Mandate.agentId` 存在但未接注册表校验 |
 
 ---
 
-## 七、锚定合约
+## 锚定合约
 
 `contracts/src/LedgerootAnchor.sol` —— 全项目唯一合约，**只存 32 字节根 + 回指针 + epoch 计数器**。
 
@@ -180,7 +299,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 
 ---
 
-## 八、十个 `ledgeroot_*` 工具
+## 十个 `ledgeroot_*` 工具
 
 | 工具 | 作用 |
 |---|---|
@@ -197,101 +316,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 
 ---
 
-## 九、快速开始
-
-```bash
-npm install
-npm run build
-
-# CLI（离线验证 / 导出证据包 / 上链锚定 / 取公钥）
-node dist/cli.js verify [--db <path>] [--check-chain]
-node dist/cli.js export [--db <path>]
-node dist/cli.js anchor [--db <path>]
-node dist/cli.js jwks
-
-# 作为 MCP server 接入宿主（stdio）
-node dist/cli.js serve
-```
-
-### 仿真演示（dry-run，零门槛）
-
-不用钱包、不用 USDC、不用网络，一条命令跑完整闭环：
-
-```bash
-LEDGEROOT_DRY_RUN=true npm run demo
-```
-
-依次演示：**① 签发授权令 → ② 正常支付（出六段收据）→ ③ 同 `requestId` 重试回放（不再扣款）→ ④ 提示注入被拦（试图把预算转给未绑定地址）→ ⑤ 一键熔断 → ⑥ 熔断后支付被拒 → ⑦ 离线验证 + 证据包**。
-
-### 真实支付演示（Monad testnet）
-
-前置：`.env` 配好 `LEDGEROOT_PRIVATE_KEY`，钱包里已有测试网 USDC（Circle faucet）。
-
-```bash
-npm run demo:pay -- <payTo地址> 0.001
-npm run verify -- --db ./ledgeroot.sqlite
-```
-
-`demo:pay` 会：写入一条演示 mandate → 跑 `ledgeroot_pay` 全流程 → 过五条策略 → 本地签 EIP-3009 `transferWithAuthorization` → 经 facilitator `/verify` + `/settle` 上链结算（facilitator 代付 gas）→ 打印六段收据。
-
-### 上链锚定
-
-```bash
-# 0. 安装 Foundry（如未安装）
-#    curl -L https://foundry.paradigm.xyz | bash && foundryup
-
-# 1. 编译 + 测试合约（forge-std 是 git submodule）
-forge install foundry-rs/forge-std
-forge build && forge test
-
-# 2. 部署（二选一）
-#   a) viem 脚本（读 forge build 产物；owner 由 LEDGEROOT_PRIVATE_KEY 推导）
-LEDGEROOT_DEPLOYER_PRIVATE_KEY=... npm run deploy:monad
-#   b) Foundry 原生（constructor 要 initialOwner —— 填锚定钱包地址）
-forge create contracts/src/LedgerootAnchor.sol:LedgerootAnchor \
-  --rpc-url https://testnet-rpc.monad.xyz \
-  --private-key $LEDGEROOT_DEPLOYER_PRIVATE_KEY \
-  --constructor-args <锚定钱包地址>
-
-# 3. 把地址写进 .env：LEDGEROOT_ANCHOR_ADDRESS=0x...
-# 4. 锚定当前所有收据的 epoch Merkle 根
-npm run build && npm run anchor -- --db ./ledgeroot.sqlite
-# 5. 离线验证收据链 + 锚定
-npm run verify -- --db ./ledgeroot.sqlite
-```
-
-### 在 Claude Code 中使用
-
-```bash
-claude mcp add ledgeroot \
-  --env LEDGEROOT_PRIVATE_KEY=0x你的私钥 \
-  --env LEDGEROOT_SIGNING_KEY=0x收据签名密钥 \
-  --env LEDGEROOT_DB=/绝对路径/ledgeroot.sqlite \
-  -- npx ledgeroot serve
-```
-
-之后全程对话：
-
-1. **签发授权**：说「给它授权 5 USDC 买 agent402.tools 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认 → 授权令签好存库。
-2. **agent 花钱**：说「帮我调研 X，要买付费数据」→ agent 自动 `ledgeroot_pay` → 策略校验 → facilitator 结算 → 六段收据。
-3. **撤销**：说「撤销它的授权」→ `ledgeroot_mandate_revoke`。
-4. **审计**：说「查收据 / 验证证据」→ `ledgeroot_receipt_list` / `ledgeroot_verify`。
-
-> 自然语言解析由宿主（Claude）完成，Ledgeroot 只提供结构化、确定性的工具；私钥只经 `--env` 传入并留在本机。
-
-### 作为库使用
-
-```ts
-import { PolicyEngine, defaultPolicies, merkleProof, verifyMerkleProof } from "ledgeroot";
-import { LedgerootStore } from "ledgeroot/store";
-import { verifyReceiptChain } from "ledgeroot/verify";
-```
-
-子路径导出：`ledgeroot` · `/store` · `/verify` · `/anchor` · `/receipt` · `/types`。库本身**不加载 `.env`**——环境由调用方掌握（只有 CLI 与 server 入口调 `loadEnv()`）。
-
----
-
-## 十、环境变量
+## 环境变量
 
 | 变量 | 说明 |
 |---|---|
@@ -307,7 +332,7 @@ import { verifyReceiptChain } from "ledgeroot/verify";
 
 ---
 
-## 十一、仓库结构
+## 仓库结构
 
 ```
 src/
@@ -328,11 +353,25 @@ scripts/         demo（dry-run 全流程）/ pay-demo（真实支付）/ deploy
 contracts/       LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/          Monad testnet 部署配置
 docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方向
+assets/          字标（亮 / 暗两版）
+test/            12 个文件、100 个测试
 ```
 
 ---
 
-## 十二、设计与调研文档
+## 参与贡献
+
+小而聚焦的改动最好落地，路线图是最好的入口：
+
+- **[roadmap.md](./docs/roadmap.md)** —— 排好序的计划，每项都带验收标准与涉及文件。
+- **[已知边界](#已知边界)** —— 表里每一条都是真实且有边界的工作量。
+- **提 PR 前先跑**：`npm run typecheck && npm test && npm run build`（CI 跑的就是这三条）。
+
+刚接触代码？`scripts/demo.ts` 用单文件走完整闭环，`test/pay.test.ts` 端到端覆盖崩溃窗口那一组行为。
+
+---
+
+## 设计与调研文档
 
 > 📌 这些文档以中文撰写，尚未有英文版。
 
@@ -351,4 +390,16 @@ docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方
 
 ## 许可
 
-MIT
+MIT © 2026 Ledgeroot
+
+<div align="center">
+
+### 行业造好了锁，没人造钥匙圈；造好了刹车，没人造黑匣子。
+
+**[自己验一遍——不必信我们。](#快速开始)**
+
+⭐ **[Star](https://github.com/ledgeroot/ledgeroot)** · 📖 **[English README](./README.md)** · 🗺️ **[路线图](./docs/roadmap.md)** · 🛡️ **[威胁全景](./docs/threat-landscape.md)**
+
+<sub>MIT · 无 SaaS · 无遥测 · 私钥永不出本机</sub>
+
+</div>
