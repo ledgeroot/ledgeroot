@@ -13,7 +13,7 @@
 
 [![CI](https://github.com/ledgeroot/ledgeroot/actions/workflows/ci.yml/badge.svg)](https://github.com/ledgeroot/ledgeroot/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/ledgeroot)](https://www.npmjs.com/package/ledgeroot)
-![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
+![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![MCP](https://img.shields.io/badge/MCP-server-informational)
 ![x402](https://img.shields.io/badge/x402-payments-blueviolet)
