@@ -120,9 +120,15 @@ export async function anchor(services: LedgerootServices) {
   }
   const receipts = services.store.listReceipts();
   const root = epochRoot(receipts);
+
+  // The epoch comes from the contract, which owns the sequence. Read it before
+  // the write so an unreachable chain fails here instead of after gas is spent,
+  // then read it again afterwards and keep the contract's own answer — the
+  // pending value is only a fallback for that second read failing.
+  const before = await services.anchorer.currentEpoch();
   const txHash = await services.anchorer.anchor(root);
-  const latest = services.store.latestAnchor();
-  const epoch = latest ? latest.epoch + 1 : 1;
+  const epoch = await services.anchorer.currentEpoch().catch(() => before + 1);
+
   services.store.recordAnchor(epoch, root, txHash, receipts.length);
   return { anchored: true, epoch, root, txHash, receiptCount: receipts.length };
 }

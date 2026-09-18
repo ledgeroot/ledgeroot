@@ -22,10 +22,15 @@ function segments(): ReceiptSegments {
   };
 }
 
-function fakeAnchorer(txHash = "0xfaketx") {
+/**
+ * A contract stub. `chainEpoch` stands in for what `lastEpoch()` returns, which
+ * on a real chain is the number of the anchor just submitted.
+ */
+function fakeAnchorer(txHash = "0xfaketx", chainEpoch = 1) {
   return {
     enabled: true,
     anchor: async (_root: string) => txHash,
+    currentEpoch: async () => chainEpoch,
   };
 }
 
@@ -81,6 +86,25 @@ describe("anchor flow", () => {
     const services = { store, anchorer: undefined } as unknown as LedgerootServices;
     const result = await anchor(services);
     expect(result.anchored).toBe(false);
+    store.close();
+  });
+
+  it("takes the epoch from the contract rather than a local counter", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.appendReceipt(denied("anchored"));
+
+    // A fresh local database has an empty anchors table, but this contract has
+    // been anchored to before. Counting locally would call this "epoch 1"
+    // while the chain calls it 7, and the dashboard reads the local row.
+    const services = {
+      store,
+      anchorer: fakeAnchorer("0xfaketx", 7),
+    } as unknown as LedgerootServices;
+
+    const result = await anchor(services);
+
+    expect(result.epoch).toBe(7);
+    expect(store.latestAnchor()?.epoch).toBe(7);
     store.close();
   });
 
