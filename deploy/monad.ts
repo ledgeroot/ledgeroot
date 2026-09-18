@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { createWalletClient, http, type Hex } from "viem";
+import { createPublicClient, createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { pathToFileURL } from "node:url";
 import { loadEnv } from "../src/env.js";
@@ -52,7 +52,18 @@ export async function deployAnchor(bytecode: Hex, owner: Hex): Promise<Hex> {
     chain: monadTestnet,
     transport: http(monad.rpcUrl),
   });
-  return wallet.deployContract({ abi: monad.anchorAbi, bytecode, args: [owner] });
+  const hash = await wallet.deployContract({ abi: monad.anchorAbi, bytecode, args: [owner] });
+  // deployContract resolves to the transaction hash, so the address only exists
+  // once the receipt lands. Returning the hash here printed a 32-byte value
+  // where the caller expects a contract address.
+  const receipt = await createPublicClient({
+    chain: monadTestnet,
+    transport: http(monad.rpcUrl),
+  }).waitForTransactionReceipt({ hash });
+  if (!receipt.contractAddress) {
+    throw new Error(`deployment ${hash} produced no contract address (status ${receipt.status})`);
+  }
+  return receipt.contractAddress;
 }
 
 function readFoundryBytecode(): Hex | undefined {
@@ -60,7 +71,11 @@ function readFoundryBytecode(): Hex | undefined {
     const artifact = JSON.parse(
       readFileSync("contracts/out/LedgerootAnchor.sol/LedgerootAnchor.json", "utf8"),
     ) as { bytecode?: { object?: string } };
-    return artifact.bytecode?.object ? (`0x${artifact.bytecode.object}` as Hex) : undefined;
+    const object = artifact.bytecode?.object;
+    if (!object) return undefined;
+    // forge ships `object` already 0x-prefixed here, so prefixing unconditionally
+    // produced "0x0x..." and the node rejected the gas estimate.
+    return (object.startsWith("0x") ? object : `0x${object}`) as Hex;
   } catch {
     return undefined;
   }
