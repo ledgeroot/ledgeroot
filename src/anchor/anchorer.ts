@@ -17,6 +17,11 @@ export function epochRoot(receipts: Receipt[]): string {
 
 export const anchorAbi = [
   {
+    type: "constructor",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "initialOwner", type: "address" }],
+  },
+  {
     type: "function",
     name: "anchor",
     stateMutability: "nonpayable",
