@@ -1,8 +1,9 @@
 # Ledgeroot 行动规划
 
 > 制定日期：2026-09-17
-> 最近修订：2026-09-18（第五次补充）—— ⚠️ **新增 §一 第 12 条前提（AWS Bedrock AgentCore payments 已 GA）、§2.4 的 N13–N15、§五 的 P1-8（A1/A3/A4/A5）、§十 的 Q9、§十一 监控触发**。**其中"费率结构护城河挡不住云厂商"一条推翻了 §零 生态位论证的一部分。** 详见 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md)
-> 依据文档：[aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md) · [commercialization.md](./commercialization.md) · [architecture-gaps.md](./architecture-gaps.md) · [standards-landscape.md](./standards-landscape.md) · [threat-landscape.md](./threat-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)
+> 最近修订：2026-09-18（第六次补充）—— ✅ **新增 §六 P2-5（质量与信任工程：install matrix / `doctor` / npm provenance）与 §七 P3-4（PROV-O 导出）**，并在 §五 P1-6 补上**支付查询原语**（先例检索 / 意图链 / 影响面）。来源是 [semantica-adjacent-analysis.md](./semantica-adjacent-analysis.md)——**它给出的是做法，不是方向**；本次没有因为任何外部项目改变既有排序
+> 第五次补充：2026-09-18 —— ⚠️ **新增 §一 第 12 条前提（AWS Bedrock AgentCore payments 已 GA）、§2.4 的 N13–N15、§五 的 P1-8（A1/A3/A4/A5）、§十 的 Q9、§十一 监控触发**。**其中"费率结构护城河挡不住云厂商"一条推翻了 §零 生态位论证的一部分。** 详见 [aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md)
+> 依据文档：[aws-agentcore-payments-analysis.md](./aws-agentcore-payments-analysis.md) · [semantica-adjacent-analysis.md](./semantica-adjacent-analysis.md) · [commercialization.md](./commercialization.md) · [architecture-gaps.md](./architecture-gaps.md) · [standards-landscape.md](./standards-landscape.md) · [threat-landscape.md](./threat-landscape.md) · [trustbench-competitive-analysis.md](./trustbench-competitive-analysis.md) · [vaara-competitive-analysis.md](./vaara-competitive-analysis.md)
 > 适用范围：Ledgeroot（engine）+ MandateKey（dashboard）
 > 排序原则：**先正确性，再差异化，再可见性，最后公信力** —— 前者是后者的前提
 > 商业化定位：**开源内核 + 企业控制面 + 对账与聚合层**；本期不启动商业化，只做架构留缝
@@ -528,6 +529,20 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 - ⚠️ **前置**：本条依赖 **C1 的设计决定**（见 §十）——元数据集中到什么程度，决定聚合层的数据模型
 - ⚠️ **同时依赖 P1-7**：聚合的可信度建立在"能证明没漏"之上
 
+**⭐ 2026-09-18 新增：本条的第一批交付物是三个「支付查询原语」，而不是聚合报表。**
+
+依据 [semantica-adjacent-analysis.md](./semantica-adjacent-analysis.md) §三·2。**原料已经全在库里**（逐笔收据 + `taskId` + 对手方 + 金额 + 402 报价 + 逐条策略判定），缺的只是查询面：
+
+| 原语 | 现在的替代 | 对 agent 的直接价值 |
+|---|---|---|
+| **先例检索** —— 「这个对手方上次收我多少 / 我是否为这类数据付过费」 | 无（`receipt_list` 只能按 mandate / status / endpoint 过滤） | ⭐ **避免重复采购、发现报价上涨**——这是让 agent 自己受益的那一格 |
+| **意图链追踪** —— `taskId` → 该任务下全部支付 + 拦截 + 结果 | `taskId` 只是一个分组键，没有遍历 | 把「这笔钱属于哪次任务」变成一次遍历 |
+| **影响面** —— 某个对手方 / 端点吃掉多少预算 | 无 | 异常视图的前置 |
+
+> 📌 **为什么放在 P1-6 而不是单开一条**：这正是「不是收据，是账」那句话在接口层的落地——**账要能被问问题**，否则它只是死档案。也是 `semantica` 那条「审计是主收益的副产品」对我们唯一可操作的推论。
+>
+> ⚠️ **不引入图数据库**：`taskId` 是一层浅分组，用 SQL 递归或两次查询即可，**不要为了一个查询原语背上一个图存储**。
+
 ### P1-7. 增量验证 + 完整性的承重作用（架构评估新增）
 
 > 依据 [architecture-gaps.md](./architecture-gaps.md) §B2 与 §C1。
@@ -606,6 +621,33 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 - **做什么**：`FacilitatorNetworkConfig` 已抽出 network/scheme，往前一步做成可配置列表 + failover
 - **涉及**：`src/x402/facilitator.ts`、`src/chains.ts`、`src/bootstrap.ts`、`src/env.ts`
 
+### P2-5. 质量与信任工程（2026-09-18 新增，借用 Semantica 的清单）
+
+> 依据 [semantica-adjacent-analysis.md](./semantica-adjacent-analysis.md) §三·3/4/5。**三条都很便宜，而且都不是加新功能——是让我们已经说出口的话变成真的。**
+
+**① Install matrix（`os × node`，且从发布产物安装）** ⭐ 三条里最急
+
+- **为什么现在**：我们刚因为缺这个把一条**假声明**带上线——`engines: ">=20"` 在 node 20 上让 4 个 vitest worker **SIGSEGV**（`better-sqlite3@13` 要求 ≥22），72/100 之后崩掉。**跨版本矩阵会在第一次提交就抓到它。**
+- **做什么**：矩阵从「只看 node 版本」改成 `os × node`（`ubuntu-latest` + `macos-latest` × 22 / 24）；**并新增一步：从 `npm pack` 产物安装后再冒烟测试**——现在的步骤全部从源码跑，**验证不了发布物本身**。
+- **涉及**：`.github/workflows/ci.yml`
+- **验收**：任一支持组合下，从 tarball 安装后 `npx ledgeroot jwks` 与 `verify` 均可运行。
+
+**② `ledgeroot doctor`**
+
+- **为什么**：我们的失败模式**全都是静默降级**，而这正是 `doctor` 最擅长的一类问题。
+- **做什么**：逐项输出结论（不是一句 ok）——env 完整性 / 支付密钥与签名密钥是否齐备 / **签名密钥的 `kid` 与库内已有收据是否匹配**（不匹配会让整本账变 `incomplete`，这是我们独有的坑）/ DB 是否可写 / `LEDGEROOT_ANCHOR_ADDRESS` 是否设置 / facilitator 与 RPC 可达性（可选，`--check-network`）。
+- **涉及**：`src/cli.ts`（新增子命令）、新增 `src/doctor.ts`；README 的 quick start 之后给一行。
+- **验收**：只设 `LEDGEROOT_PRIVATE_KEY`、不设 `LEDGEROOT_SIGNING_KEY` 时，`doctor` **明确说出**「收据将不签名，验证会报 `incomplete`」。
+
+**③ 发布物信任工程**
+
+- **为什么**：我们卖的是「可验证」。**如果连自己的发布物都不可验证，"证据引擎"在自我一致性上就站不住**——这是最容易被对手一句话打穿的地方。
+- **做什么**：`npm publish --provenance`（走 GitHub Actions OIDC，基本零成本）；开 Dependabot；把依赖审计加进 CI。
+- **涉及**：`.github/workflows/`、新增 `.github/dependabot.yml`、发布流程说明。
+- **验收**：npm 包页面显示 provenance attestation。
+
+> 📌 **这三条与 P2 其余各条性质不同**：Discovery surface 与生态提交是「让别人找到我们」，**这三条是「让我们关于自己的陈述是真的」**。按 §零 的排序原则（正确性 → 差异化 → 可见性 → 公信力），它们实质上属于**正确性**，只是因为都不是功能才归在 P2。
+
 ---
 
 ## 七、P3：公信力与标准
@@ -626,6 +668,16 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 - IETF vauban 在推 STARK + 后量子（ES256K + ML-DSA-65）；Traceipt 已支持 ML-DSA-65 混合签名
 - x402 V2 的 `PAYMENT-RESPONSE` 默认 ES256K，长期完整性依赖量子计算机不存在
 - **做什么**：评估是否需要混合签名方案；至少在规范里写明威胁模型与升级路径
+
+### P3-4. PROV-O / RDF 导出（2026-09-18 新增）—— N2 最省力的一半
+
+> 依据 [semantica-adjacent-analysis.md](./semantica-adjacent-analysis.md) §三·6。**Semantica 用 W3C PROV-O 作为「监管方接受的格式」交付，而不是自造一个只有自己认的格式。**
+
+- **为什么**：`ledgeroot.receipt.v1` 是自有 schema，导出只有 JSON，第三方要验就得先读我们的文档。而 **PROV-O 是审计师与合规工具已经认得的格式**——采用它比再推一个自造 profile 省力得多。它正对 §2.4 的 **N2（人类可读交付物）**。
+- **做什么**：给 CLI `export` 与 `ledgeroot_export` 增加一条 `--format prov-o`（或 JSON-LD / Turtle）出口。映射：payment 是 Activity、mandate / issuer 是 Agent、quote / response 是 Entity，`prevHash` 关系是 `wasInformedBy`。
+- **涉及**：`src/tools/receipts.ts`、`src/cli.ts`、新增 `src/export/prov.ts`
+- **验收**：导出的 Turtle 能被标准 RDF 工具解析；**导出物里明确标注它是交付格式、不是信任根**。
+- ⚠️ **必须诚实标注**：PROV-O 表达**来源**，不表达**不可篡改**——它可以被完整伪造。**我们的签名 + 锚定仍然是信任根**，不能因为导出了 PROV-O 就暗示它自带完整性。
 
 ---
 
@@ -720,6 +772,7 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 | **N1–N12（§2.4）** | `standards-landscape.md` §二 §七、`vaara-competitive-analysis.md` §三 §七 |
 | **N13–N15 / P1-8（A1·A3·A4·A5）/ Q9** | **`aws-agentcore-payments-analysis.md` §7.2** —— AWS Bedrock AgentCore payments GA（2026-08-18），一手来源 |
 | **§一 第 12 条（护城河的 AWS 形状的洞）** | **`aws-agentcore-payments-analysis.md` §6.2** |
+| **P1-6 查询原语 / P2-5 / P3-4** | **`semantica-adjacent-analysis.md` §三 §六** —— **相邻参照，非竞品**：借做法，不借方向 |
 
 > **商业化对路线图的影响**：见 [commercialization.md](./commercialization.md)。
 > ⚠️ **第六次修订更正**：此处原写"P1-1（完整性证明）的优先级被商业化逻辑进一步抬高 —— 它是**唯一可售的差异点**"。**该表述已失效**（Vaara v1.4.0 已产品化同类机制，见 [standards-landscape.md](./standards-landscape.md) §二）。
