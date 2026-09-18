@@ -9,6 +9,7 @@ export * from "./policy/defaults.js";
 export * from "./policy/schema.js";
 export * from "./receipt/hashchain.js";
 export * from "./receipt/builder.js";
+export * from "./receipt/signing.js";
 export * from "./anchor/merkle.js";
 export * from "./anchor/anchorer.js";
 export * from "./verify/verifier.js";
