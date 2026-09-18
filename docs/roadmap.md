@@ -450,7 +450,8 @@ VALUES ((SELECT COALESCE(MAX(seq), 0) + 1 FROM receipts), @id, ...)
 ### P1-1. 完整性证明产品化（支柱 2）
 
 > 🚧 **部分完成（2026-09-18，0.4.0）**：`merkleProof` / `verifyMerkleProof` 已实现（RFC 6962 §2.1.3 审计路径），并带交叉验证测试——对 size 1–33 的**每个**叶子，用 §2.1.2 栈式算法独立算出的根校验，避免"证明与验证器互相印证同一个错误"。另加 `listMandateRecords()`（列出全部 mandate 含撤销状态）。
-> **仍未做**：把逐张包含证明接进 `verify` 与证据包（待 mandatekey 侧同步 0.4.0）；"缺口检测"语义与 `maxClass` 那一档。
+> ✅ **接入完成（2026-09-18）**：逐张包含证明已接进 mandatekey 的证据包与包内 `verify.mjs`（篡改任一证明路径即报 `tampered` 且可定位到收据）。
+> **仍未做**：`ledgeroot` 本体的 CLI / `ledgeroot_verify` 仍未输出或校验逐张证明；"缺口检测"语义与 `maxClass` 那一档。
 
 - **做什么**：
   - 把"哈希链 + epoch 根 ⇒ 序列无缺口"从实现细节变成**显式可验证的声明**
