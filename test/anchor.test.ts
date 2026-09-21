@@ -1,9 +1,10 @@
 import { rmSync } from "node:fs";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
-import { anchor, verify } from "../src/tools/receipts.js";
+import { anchor, exportEvidence, verify } from "../src/tools/receipts.js";
 import { buildReceipt } from "../src/receipt/builder.js";
 import { epochRoot } from "../src/anchor/anchorer.js";
+import { verifyMerkleProof } from "../src/anchor/merkle.js";
 import { verifyAnchor } from "../src/verify/verifier.js";
 import { TEST_KEY, sign } from "./support.js";
 import type { LedgerootServices } from "../src/context.js";
@@ -105,6 +106,46 @@ describe("anchor flow", () => {
 
     expect(result.epoch).toBe(7);
     expect(store.latestAnchor()?.epoch).toBe(7);
+    store.close();
+  });
+
+  it("exports an inclusion proof for each receipt the anchor covers", async () => {
+    const store = new LedgerootStore({ path: DB });
+    const a = denied("first");
+    const b = denied("second", a.receiptHash);
+    const later = denied("after the anchor", b.receiptHash);
+    store.appendReceipt(a);
+    store.appendReceipt(b);
+
+    const services = {
+      store,
+      anchorer: fakeAnchorer("0xfaketx", 3),
+    } as unknown as LedgerootServices;
+    await anchor(services);
+    store.appendReceipt(later);
+
+    const { bundle } = exportEvidence(services);
+    const root = bundle.anchor?.root ?? "";
+
+    // The third receipt is outside the epoch, so it gets no proof.
+    expect(root).toBe(epochRoot([a, b]));
+    expect(bundle.proofs.map((entry) => entry.receiptId).sort()).toEqual([a.id, b.id].sort());
+
+    for (const entry of bundle.proofs) {
+      const receipt = entry.receiptId === a.id ? a : b;
+      // The proof has to reach the anchored root, not merely fold to something.
+      expect(verifyMerkleProof(receipt.receiptHash, entry, root)).toBe(true);
+    }
+    store.close();
+  });
+
+  it("exports no proofs when nothing is anchored", () => {
+    const store = new LedgerootStore({ path: DB });
+    store.appendReceipt(denied("unanchored"));
+    const services = { store, anchorer: undefined } as unknown as LedgerootServices;
+    // No anchor means no root to prove against, so the list is empty rather
+    // than filled with proofs that would verify against nothing.
+    expect(exportEvidence(services).bundle.proofs).toEqual([]);
     store.close();
   });
 

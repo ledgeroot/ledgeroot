@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import type { PublicKey, Receipt } from "../types.js";
 import { epochRoot } from "../anchor/anchorer.js";
+import { merkleProof } from "../anchor/merkle.js";
 import { DEFAULT_RPC_URL } from "../chains.js";
 import { getSigningKey } from "../env.js";
 import { jwksOf, publicKeyOf } from "../receipt/signing.js";
@@ -133,6 +134,28 @@ export async function anchor(services: LedgerootServices) {
   return { anchored: true, epoch, root, txHash, receiptCount: receipts.length };
 }
 
+/**
+ * An inclusion proof for every receipt the latest anchor covers.
+ *
+ * A root on its own can only be checked by whoever holds every leaf. A proof
+ * lets the holder of one receipt show it belongs to the anchored epoch without
+ * being handed the rest of the ledger — which is the point of exporting
+ * evidence at all. Without an anchor there is no root to prove against, so the
+ * list is empty rather than invented.
+ */
+function inclusionProofs(
+  receipts: Receipt[],
+  anchor: { root: string; receiptCount: number | null } | null,
+): Array<{ receiptId: string; index: number; size: number; path: string[] }> {
+  if (!anchor || anchor.receiptCount === null) return [];
+  const epoch = receipts.slice(0, anchor.receiptCount);
+  const hashes = epoch.map((receipt) => receipt.receiptHash);
+  return epoch.map((receipt, index) => ({
+    receiptId: receipt.id,
+    ...merkleProof(hashes, index),
+  }));
+}
+
 export function exportEvidence(services: LedgerootServices) {
   const receipts = services.store.listReceipts();
   const root = epochRoot(receipts);
@@ -144,6 +167,7 @@ export function exportEvidence(services: LedgerootServices) {
       exportedAt: new Date().toISOString(),
       root,
       anchor,
+      proofs: inclusionProofs(receipts, anchor),
       // Carried so a third party can check attribution with no call home.
       keys: issuerKeys(),
       receipts,

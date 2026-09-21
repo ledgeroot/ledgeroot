@@ -128,7 +128,8 @@ export function createToolRouter(server: McpServer, services: LedgerootServices)
     "ledgeroot_export",
     {
       title: "Export evidence bundle",
-      description: "Export receipts, Merkle proof and anchor reference as a portable bundle.",
+      description:
+        "Export receipts, a Merkle inclusion proof for each receipt the latest anchor covers, and the anchor reference, as a portable bundle.",
     },
     () => text(exportEvidence(services)),
   );
