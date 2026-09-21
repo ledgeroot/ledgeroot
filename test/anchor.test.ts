@@ -6,22 +6,10 @@ import { buildReceipt } from "../src/receipt/builder.js";
 import { epochRoot } from "../src/anchor/anchorer.js";
 import { verifyMerkleProof } from "../src/anchor/merkle.js";
 import { verifyAnchor } from "../src/verify/verifier.js";
-import { TEST_KEY, sign } from "./support.js";
+import { TEST_KEY, sign, testSegments } from "./support.js";
 import type { LedgerootServices } from "../src/context.js";
-import type { ReceiptSegments } from "../src/types.js";
 
 const DB = "/tmp/cc-anchor-test.sqlite";
-
-function segments(): ReceiptSegments {
-  return {
-    intent: { text: "buy search data", timestamp: 1 },
-    mandate: { mandateId: "m-1", issuer: "0xissuer", policyIntersection: [] },
-    plan: { quoteHash: "0xquote", quote: { amount: "0.1" } },
-    call: { policyResults: [] },
-    tx: {},
-    delivery: {},
-  };
-}
 
 /**
  * A contract stub. `chainEpoch` stands in for what `lastEpoch()` returns, which
@@ -37,7 +25,7 @@ function fakeAnchorer(txHash = "0xfaketx", chainEpoch = 1) {
 
 /** A signed, denied receipt — no tx hash, so it never reads as incomplete. */
 function denied(reason: string, prevHash?: string) {
-  return sign(buildReceipt({ status: "denied", reason, segments: segments(), prevHash }));
+  return sign(buildReceipt({ status: "denied", reason, segments: testSegments(), prevHash }));
 }
 
 afterEach(() => {

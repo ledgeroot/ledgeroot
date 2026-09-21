@@ -8,6 +8,7 @@ import {
 import { buildReceipt } from "../src/receipt/builder.js";
 import { toUnits } from "../src/decimal.js";
 import { MONAD_TESTNET_X402 } from "../src/x402/facilitator.js";
+import { testSegments } from "./support.js";
 import type { Receipt, ReceiptSegments } from "../src/types.js";
 
 const USDC = MONAD_TESTNET_X402.usdcAddress;
@@ -23,17 +24,12 @@ function paidReceipt(
     tx?: ReceiptSegments["tx"];
   } = {},
 ): Receipt {
-  const segments: ReceiptSegments = {
-    intent: { text: "buy data", timestamp: 1 },
-    mandate: { mandateId: "m-1", issuer: "0xissuer", policyIntersection: [] },
-    plan: {
-      quoteHash: "0xquote",
-      quote: { amount: "0.1", payTo: overrides.payTo ?? PAY_TO, endpoint: "/search" },
-    },
-    call: { policyResults: [] },
-    tx: overrides.tx ?? { txHash: TX, chainId: CHAIN, payer: PAYER },
-    delivery: {},
-  };
+  const segments = testSegments({
+    amount: "0.1",
+    payTo: overrides.payTo ?? PAY_TO,
+    endpoint: "/search",
+  });
+  segments.tx = overrides.tx ?? { txHash: TX, chainId: CHAIN, payer: PAYER };
   return buildReceipt({ status: "paid", amount: overrides.amount ?? "0.1", segments });
 }
 

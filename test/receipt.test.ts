@@ -1,22 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { buildReceipt, recomputeReceiptHash } from "../src/receipt/builder.js";
 import { verifyReceipt, verifyReceiptChain } from "../src/verify/verifier.js";
-import { TEST_PUBLIC_KEY, sign } from "./support.js";
-import type { Receipt, ReceiptSegments } from "../src/types.js";
-
-function segments(): ReceiptSegments {
-  return {
-    intent: { text: "buy search data", timestamp: 1 },
-    mandate: { mandateId: "m-1", issuer: "0xissuer", policyIntersection: [] },
-    plan: { quoteHash: "0xquote", quote: { amount: "0.1" } },
-    call: { policyResults: [] },
-    tx: {},
-    delivery: {},
-  };
-}
+import { TEST_PUBLIC_KEY, sign, testSegments } from "./support.js";
+import type { Receipt } from "../src/types.js";
 
 function denied(reason: string, prevHash?: string): Receipt {
-  return buildReceipt({ status: "denied", reason, segments: segments(), prevHash });
+  return buildReceipt({ status: "denied", reason, segments: testSegments(), prevHash });
 }
 
 describe("receipt chain", () => {
@@ -42,8 +31,36 @@ describe("receipt chain", () => {
     expect(verifyReceiptChain([a, broken], [TEST_PUBLIC_KEY]).status).toBe("tampered");
   });
 
+  it("catches a quote swapped after signing, even when re-hashed and re-signed", () => {
+    const receipt = sign(denied("test"));
+    const swapped = {
+      ...receipt,
+      segments: {
+        ...receipt.segments,
+        plan: {
+          ...receipt.segments.plan,
+          quote: { ...receipt.segments.plan.quote, amount: "9" },
+        },
+      },
+    };
+    // Re-hash and re-sign so every other check passes. The plan check is the
+    // only one that notices the hash no longer covers the quote on the receipt,
+    // which is exactly the edit an issuer could otherwise make quietly.
+    const forged = sign({
+      ...swapped,
+      id: recomputeReceiptHash(swapped),
+      receiptHash: recomputeReceiptHash(swapped),
+    });
+
+    const result = verifyReceipt(forged, [TEST_PUBLIC_KEY]);
+    expect(result.status).toBe("tampered");
+    expect(result.issues.map((issue) => issue.message).join()).toMatch(
+      /does not commit to the recorded quote/,
+    );
+  });
+
   it("reports a paid receipt with no tx hash as incomplete, not tampered", () => {
-    const receipt = sign(buildReceipt({ status: "paid", segments: segments() }));
+    const receipt = sign(buildReceipt({ status: "paid", segments: testSegments() }));
     const result = verifyReceipt(receipt, [TEST_PUBLIC_KEY]);
     expect(result.status).toBe("incomplete");
     expect(result.issues).toEqual([
@@ -55,7 +72,7 @@ describe("receipt chain", () => {
     // MPP settles on more than one rail, and its card rail has no chain at all,
     // so a payment need not carry a transaction hash. We cannot call such a
     // record verified, and we cannot call it tampered either.
-    const segments2 = segments();
+    const segments2 = testSegments();
     segments2.tx = { protocol: "mpp", payer: "0xpayer" };
     const receipt = sign(buildReceipt({ status: "paid", segments: segments2 }));
 
@@ -67,7 +84,7 @@ describe("receipt chain", () => {
   });
 
   it("still holds x402 to the transaction hash rule once it is labelled", () => {
-    const segments2 = segments();
+    const segments2 = testSegments();
     segments2.tx = { protocol: "x402", payer: "0xpayer" };
     const receipt = sign(buildReceipt({ status: "paid", segments: segments2 }));
 
@@ -81,7 +98,7 @@ describe("receipt chain", () => {
   it("lets a definite mismatch outrank missing evidence", () => {
     // Same receipt, now both tampered (content no longer matches its hash) and
     // incomplete (still no tx hash). The status must not soften to incomplete.
-    const receipt = sign(buildReceipt({ status: "paid", segments: segments() }));
+    const receipt = sign(buildReceipt({ status: "paid", segments: testSegments() }));
     const result = verifyReceipt({ ...receipt, reason: "edited" }, [TEST_PUBLIC_KEY]);
     expect(result.status).toBe("tampered");
     expect(result.issues.map((issue) => issue.kind).sort()).toEqual(["incomplete", "tampered"]);

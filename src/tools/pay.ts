@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import { buildReceipt } from "../receipt/builder.js";
-import { contentHash } from "../receipt/hashchain.js";
+import { canonicalHash, contentHash } from "../receipt/hashchain.js";
 import { signReceipt } from "../receipt/signing.js";
 import { getSigningKey } from "../env.js";
 import { add } from "../decimal.js";
@@ -22,10 +22,16 @@ export const payInput = {
     .optional()
     .describe("Grouping key linking this payment to a user task"),
   counterparty: z.string().describe("x402 gateway host"),
-  payTo: z.string().describe("payTo address from the 402 response"),
-  amount: z.string().describe("Requested amount in USDC (decimal string)"),
-  quoteAmount: z.string().describe("Quoted amount in USDC from the 402 response"),
-  quoteHash: z.string().describe("Canonical hash of the original 402 response"),
+  quote: z
+    .record(z.string(), z.unknown())
+    .describe(
+      "The 402 payment requirements exactly as the seller sent them. Must carry payTo (address) and amount (USDC decimal string). The receipt records this whole object and commits to it by hash.",
+    ),
+  amount: z
+    .string()
+    .describe(
+      "Amount actually charged in USDC (decimal string). May differ from the quote — that is what quote drift detects.",
+    ),
   endpoint: z.string().describe("API endpoint being called"),
   responseBody: z
     .string()
@@ -48,6 +54,27 @@ export interface PayResult {
   deduplicated?: boolean;
 }
 
+/**
+ * Read the seller's payment requirements.
+ *
+ * `payTo` and the quoted amount come from the quote rather than from separate
+ * arguments: policy has to judge what the seller actually asked for, and the
+ * receipt has to record the object its hash commits to. A quote that cannot
+ * answer either question is a malformed request, so it fails here instead of
+ * becoming a receipt for a payment nothing could check.
+ */
+function readQuote(quote: Record<string, unknown>): { payTo: string; quoteAmount: string } {
+  const payTo = quote.payTo;
+  const amount = quote.amount;
+  if (typeof payTo !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(payTo)) {
+    throw new Error("quote.payTo must be a 0x-prefixed address");
+  }
+  if (typeof amount !== "string" || amount.trim() === "") {
+    throw new Error("quote.amount must be a USDC decimal string");
+  }
+  return { payTo, quoteAmount: amount };
+}
+
 function cumulativeSpent(services: LedgerootServices, mandateId: string): string {
   return services.store
     .listReceipts({ mandateId, status: "paid" })
@@ -60,6 +87,7 @@ function callTimestamps(services: LedgerootServices, endpoint: string): number[]
 
 function buildSegments(
   input: PayInput,
+  quoteHash: string,
   policyResults: ReceiptSegments["call"]["policyResults"],
   issuer: string,
   policyIntersection: string[],
@@ -68,10 +96,9 @@ function buildSegments(
   return {
     intent: { text: input.intent, timestamp: now },
     mandate: { mandateId: input.mandateId, issuer, policyIntersection },
-    plan: {
-      quoteHash: input.quoteHash,
-      quote: { amount: input.quoteAmount, payTo: input.payTo, endpoint: input.endpoint },
-    },
+    // The quote is stored whole, so the hash above can be recomputed from the
+    // receipt and a swapped quote fails verification instead of passing.
+    plan: { quoteHash, quote: input.quote },
     call: { policyResults },
     tx: {},
     delivery: {},
@@ -99,6 +126,9 @@ export async function handlePay(
   services: LedgerootServices,
   input: PayInput,
 ): Promise<PayResult> {
+  const { payTo, quoteAmount } = readQuote(input.quote);
+  const quoteHash = canonicalHash(input.quote);
+
   // Idempotency: the same requestId returns the existing receipt and never
   // re-pays — retries are resolved against the append-only ledger, not the rail.
   if (input.requestId) {
@@ -128,7 +158,7 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, [], "", []),
+      segments: buildSegments(input, quoteHash, [], "", []),
       prevHash,
     });
     record(services, receipt);
@@ -152,7 +182,7 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, [], mandate.issuer, policyIntersection),
+      segments: buildSegments(input, quoteHash, [], mandate.issuer, policyIntersection),
       prevHash,
     });
     record(services, receipt);
@@ -162,9 +192,9 @@ export async function handlePay(
   const evaluation = services.engine.validate({
     mandate,
     counterparty: input.counterparty,
-    payTo: input.payTo,
+    payTo,
     amount: input.amount,
-    quoteAmount: input.quoteAmount,
+    quoteAmount,
     endpoint: input.endpoint,
     now: Date.now(),
     cumulativeSpent: cumulativeSpent(services, mandate.id),
@@ -188,18 +218,18 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, policyResults, mandate.issuer, policyIntersection),
+      segments: buildSegments(input, quoteHash, policyResults, mandate.issuer, policyIntersection),
       prevHash,
     });
     record(services, receipt);
     return { status: "denied", receiptId: receipt.id, reason };
   }
 
-  const quote: X402Quote = {
+  const x402: X402Quote = {
     gateway: input.counterparty,
-    payTo: input.payTo,
+    payTo,
     amount: input.amount,
-    quoteHash: input.quoteHash,
+    quoteHash,
     endpoint: input.endpoint,
   };
 
@@ -222,7 +252,7 @@ export async function handlePay(
       mandateId: mandate.id,
       counterparty: input.counterparty,
       endpoint: input.endpoint,
-      payTo: input.payTo,
+      payTo,
       amount: input.amount,
     })
   ) {
@@ -237,16 +267,22 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, policyResults, mandate.issuer, policyIntersection),
+      segments: buildSegments(input, quoteHash, policyResults, mandate.issuer, policyIntersection),
       prevHash,
     });
     record(services, receipt);
     return { status: "denied", receiptId: receipt.id, reason };
   }
 
-  const payment = await services.payments.pay(quote);
+  const payment = await services.payments.pay(x402);
 
-  const segments = buildSegments(input, policyResults, mandate.issuer, policyIntersection);
+  const segments = buildSegments(
+    input,
+    quoteHash,
+    policyResults,
+    mandate.issuer,
+    policyIntersection,
+  );
   segments.tx = {
     protocol: SETTLEMENT_PROTOCOL_X402,
     txHash: payment.txHash,

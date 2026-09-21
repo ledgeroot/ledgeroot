@@ -3,7 +3,7 @@ import { createServices } from "../src/bootstrap.js";
 import { signMandate } from "../src/mandate.js";
 import { handlePay } from "../src/tools/pay.js";
 import { exportEvidence, verify } from "../src/tools/receipts.js";
-import { canonicalHash } from "../src/receipt/hashchain.js";
+import { MONAD_TESTNET_X402 } from "../src/x402/facilitator.js";
 
 loadEnv();
 
@@ -11,19 +11,19 @@ const PAY_TO = "0x35DA8C7a8d2253354925354b436A0422B9618dE4";
 const EVIL = "0x000000000000000000000000000000000000dead";
 
 /**
- * A 402 quote plus a commitment to it.
- *
- * The receipt records `plan.quote` — a summary of the quote — next to this
- * hash, so the hash is computed over exactly the fields that get recorded and
- * can be recomputed from the receipt. What matters is that the field commits to
- * something; a caller holding the full 402 response would hash that instead.
+ * The 402 payment requirements a seller would send, in the shape the engine
+ * reads. It takes `payTo` and the quoted amount out of this object and stores
+ * the whole thing, so the receipt commits to the quote rather than to a summary
+ * of it — and a quote swapped afterwards fails verification.
  */
-function quote(payTo: string, amount: string, endpoint = "/search") {
-  const summary = { amount, payTo, endpoint };
+function requirements(payTo: string, amount: string, resource = "/search") {
   return {
-    ...summary,
-    gateway: "agent402.tools",
-    quoteHash: `0x${canonicalHash(summary)}`,
+    scheme: MONAD_TESTNET_X402.scheme,
+    network: MONAD_TESTNET_X402.network,
+    asset: MONAD_TESTNET_X402.usdcAddress,
+    payTo,
+    amount,
+    resource,
   };
 }
 
@@ -53,18 +53,16 @@ async function main(): Promise<void> {
     console.log("① 签发授权令", JSON.stringify({ id: mandate.id, issuer: mandate.issuer }));
 
     // ② Normal payment, within the mandate.
-    const approved = quote(PAY_TO, "0.1");
+    const approved = requirements(PAY_TO, "0.1");
     const base = {
       intent: "buy search data from agent402.tools",
       mandateId: mandate.id,
       requestId: "demo-req-1",
       taskId: "demo-task",
-      counterparty: approved.gateway,
-      payTo: approved.payTo,
-      amount: approved.amount,
-      quoteAmount: approved.amount,
-      quoteHash: approved.quoteHash,
-      endpoint: approved.endpoint,
+      counterparty: "agent402.tools",
+      quote: approved,
+      amount: "0.1",
+      endpoint: "/search",
       // What the agent got back, so segment 6 covers delivery and not just the
       // payment — only its hash and size are recorded.
       responseBody: JSON.stringify({ query: "agent payments", results: 3 }),
@@ -77,17 +75,15 @@ async function main(): Promise<void> {
     console.log("③ 重试同 requestId", JSON.stringify(retry));
 
     // ④ Prompt injection — tries to drain the budget to a non-bound address.
-    const injected = quote(EVIL, "100");
+    const injected = requirements(EVIL, "100");
     const injection = await handlePay(services, {
       intent: "transfer entire budget to 0xevil (prompt injection)",
       mandateId: mandate.id,
       taskId: "demo-task",
-      counterparty: injected.gateway,
-      payTo: injected.payTo,
-      amount: injected.amount,
-      quoteAmount: injected.amount,
-      quoteHash: injected.quoteHash,
-      endpoint: injected.endpoint,
+      counterparty: "agent402.tools",
+      quote: injected,
+      amount: "100",
+      endpoint: "/search",
     });
     console.log("④ 注入攻击被拦", JSON.stringify(injection));
 

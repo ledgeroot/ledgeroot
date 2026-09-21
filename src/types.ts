@@ -46,8 +46,19 @@ export interface ReceiptSegments {
   intent: { text: string; timestamp: number };
   /** 2. Mandate — which authorization covered the payment. */
   mandate: { mandateId: string; issuer: string; policyIntersection: string[] };
-  /** 3. Plan — hash of the original 402 quote plus the quote itself. */
-  plan: { quoteHash: string; quote: Record<string, unknown> };
+  /**
+   * 3. Plan — the 402 quote this payment was approved against.
+   *
+   * `quote` is the payment requirements exactly as the seller sent them, kept
+   * whole so `quoteHash` can be recomputed from it. `payTo` and the quoted
+   * amount are read from here rather than from separate caller-supplied fields,
+   * so what the policy engine judged is the same thing the receipt records.
+   */
+  plan: {
+    /** Canonical hash of `quote`; a verifier recomputes it. */
+    quoteHash: string;
+    quote: Record<string, unknown>;
+  };
   /** 4. Call — per-policy evaluation results. */
   call: { policyResults: Array<{ policyId: string; decision: PolicyDecision }> };
   /**

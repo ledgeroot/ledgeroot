@@ -2,7 +2,7 @@ import { loadEnv } from "../src/env.js";
 import { createServices } from "../src/bootstrap.js";
 import { signMandate } from "../src/mandate.js";
 import { handlePay } from "../src/tools/pay.js";
-import { canonicalHash } from "../src/receipt/hashchain.js";
+import { MONAD_TESTNET_X402 } from "../src/x402/facilitator.js";
 import type { Mandate } from "../src/types.js";
 
 loadEnv();
@@ -37,19 +37,25 @@ try {
   const mandate = await signMandate(unsigned, privateKey);
   services.store.upsertMandate(mandate);
 
-  // The hash commits to the quote summary the receipt records, so it can be
-  // recomputed from the receipt rather than being a placeholder.
-  const quote = { amount, payTo, endpoint: "/search" };
+  // The payment requirements as a seller would send them. The engine reads
+  // payTo and the quoted amount from this object and records it whole, so the
+  // receipt commits to the quote rather than to a summary of it.
+  const quote = {
+    scheme: MONAD_TESTNET_X402.scheme,
+    network: MONAD_TESTNET_X402.network,
+    asset: MONAD_TESTNET_X402.usdcAddress,
+    payTo,
+    amount,
+    resource: "/search",
+  };
 
   const result = await handlePay(services, {
     intent: "demo: pay for a data API call",
     mandateId: mandate.id,
     counterparty: "agent402.tools",
-    payTo: quote.payTo,
-    amount: quote.amount,
-    quoteAmount: quote.amount,
-    quoteHash: `0x${canonicalHash(quote)}`,
-    endpoint: quote.endpoint,
+    quote,
+    amount,
+    endpoint: "/search",
   });
 
   console.log("MANDATE:");

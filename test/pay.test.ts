@@ -2,9 +2,10 @@ import { rmSync } from "node:fs";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
 import { handlePay } from "../src/tools/pay.js";
-import { contentHash } from "../src/receipt/hashchain.js";
+import { contentHash, canonicalHash } from "../src/receipt/hashchain.js";
 import { PolicyEngine } from "../src/policy/engine.js";
 import { defaultPolicies } from "../src/policy/defaults.js";
+import { testQuote } from "./support.js";
 import type { Mandate } from "../src/types.js";
 import type { LedgerootServices } from "../src/context.js";
 
@@ -45,10 +46,8 @@ function payInput(overrides: Record<string, unknown> = {}) {
     intent: "buy data",
     mandateId: "m-1",
     counterparty: "agent402.tools",
-    payTo: "0x35DA8C7a8d2253354925354b436A0422B9618dE4",
+    quote: testQuote({ payTo: "0x35DA8C7a8d2253354925354b436A0422B9618dE4", amount: "0.1" }),
     amount: "0.1",
-    quoteAmount: "0.1",
-    quoteHash: "0x",
     endpoint: "/search",
     ...overrides,
   };
@@ -226,5 +225,53 @@ describe("receipt segments", () => {
     expect(first?.segments.delivery.payloadHash).not.toBe(
       second?.segments.delivery.payloadHash,
     );
+  });
+
+  it("records the quote whole and commits to it by hash", async () => {
+    const receipt = await payWith({});
+    const { quote, quoteHash } = receipt!.segments.plan;
+    // The quote is stored as the seller sent it, and the hash is recomputable
+    // from the receipt — which is what lets a verifier notice a swapped quote
+    // instead of taking the hash's word for it.
+    expect(quote).toMatchObject({
+      payTo: "0x35DA8C7a8d2253354925354b436A0422B9618dE4",
+      amount: "0.1",
+    });
+    expect(quoteHash).toBe(canonicalHash(quote));
+  });
+
+  it("enforces policy against the quote, not against a caller-supplied payTo", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate());
+    const svc = makeServices(store);
+
+    // The mandate binds 0x35DA…; the quote asks for somewhere else. Nothing
+    // else in the call says so, because the quote is the only source of payTo.
+    const result = await handlePay(
+      svc,
+      payInput({
+        quote: testQuote({ payTo: `0x${"9".repeat(40)}`, amount: "0.1" }),
+      }),
+    );
+
+    expect(result.status).toBe("denied");
+    expect(result.reason).toMatch(/not bound by the mandate/);
+    expect(svc.pay).not.toHaveBeenCalled();
+    store.close();
+  });
+
+  it("refuses a quote it cannot read rather than recording a payment nobody can check", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.upsertMandate(mandate());
+    const svc = makeServices(store);
+
+    await expect(handlePay(svc, payInput({ quote: { amount: "0.1" } }))).rejects.toThrow(
+      /quote\.payTo/,
+    );
+    await expect(handlePay(svc, payInput({ quote: { payTo: `0x${"1".repeat(40)}` } }))).rejects.toThrow(
+      /quote\.amount/,
+    );
+    expect(store.listReceipts()).toHaveLength(0);
+    store.close();
   });
 });

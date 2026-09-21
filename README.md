@@ -168,7 +168,7 @@ Ledgeroot's three layers map one-to-one onto the three runtime safeguards in MAS
 |---|---|---|
 | 1. **Intent** | a natural-language statement of why the agent is paying | `segments.intent.text` |
 | 2. **Mandate** | the authorization covering this payment + the **policy intersection** (which policies the mandate actually constrained) | `segments.mandate` |
-| 3. **Plan** | canonical hash of the original 402 quote, plus the quote itself (`amount` / `payTo` / `endpoint`) | `segments.plan` |
+| 3. **Plan** | the 402 quote **exactly as the seller sent it**, plus its canonical hash — `payTo` and the quoted amount are read from here, so what policy judged is what the receipt records | `segments.plan` |
 | 4. **Call** | **the verdict of every policy**, both the passing and the denying ones | `segments.call.policyResults` |
 | 5. **Transaction** | settlement protocol + `txHash` + `chainId` + `payer` | `segments.tx` |
 | 6. **Delivery** | **the hash and byte size** of the response body — never the body itself | `segments.delivery` |
@@ -180,6 +180,7 @@ A few things are deliberate:
 - **The hash chain proves the content was not changed; the signature proves who made the statement.** They are independent: tamper with the content and re-hash it, and the chain still verifies — only the signature catches it.
 - Public keys are published as **JWKS** (`npx ledgeroot jwks`) and shipped inside the evidence bundle, so a third party can verify signatures **without calling home**.
 - **Segment 6 can only be reported by the caller** (`responseBody` on `ledgeroot_pay`). Ledgeroot settles the payment but **never fetches the resource** — only the agent sees the response body, so only the caller can supply its hash.
+- **Segment 3 is checkable, not just descriptive.** The quote is stored whole and committed to by hash, so a verifier recomputes `canonicalHash(segments.plan.quote)` and compares. A quote swapped after signing fails that check even if the receipt is re-hashed and re-signed — which is exactly the edit an issuer could otherwise make quietly. `payTo` and the quoted amount come from the same object, so a caller cannot pass a benign `payTo` alongside a quote pointing somewhere else.
 
 ### The signing key is separate from the payment key
 
@@ -199,7 +200,7 @@ Verification **depends on no server** — `ledgeroot verify` reads the local dat
 | Status | Meaning |
 |---|---|
 | `verified` | every check passed |
-| `tampered` | **bytes were checked and do not match** — self-hash mismatch / broken `prevHash` link / a first receipt carrying `prevHash` / recomputed epoch root ≠ anchored root / receipts missing from an anchored epoch / signature mismatch / unsupported `alg` |
+| `tampered` | **bytes were checked and do not match** — self-hash mismatch / broken `prevHash` link / a first receipt carrying `prevHash` / `plan.quoteHash` not committing to the recorded quote / recomputed epoch root ≠ anchored root / receipts missing from an anchored epoch / signature mismatch / unsupported `alg` |
 | `incomplete` | **evidence is missing or unobtainable** — unsigned / no public key for that `kid` / a paid receipt with no `txHash` / an anchor with no boundary / unknown settlement protocol / unreachable node |
 
 **This boundary is the single most important discipline in the product**: `tampered` outranks `incomplete`, and **unobtainable evidence is never reported as tampering**. Reporting a network failure as tampering would destroy the credibility of the whole alarm; conversely, treating missing evidence as a pass would claim a check that never ran.
@@ -303,7 +304,7 @@ The honest section. These are limits of the **current implementation**, not a re
 
 | Tool | What it does |
 |---|---|
-| `ledgeroot_pay` | Constrained x402 payment (idempotent dedupe + task grouping), producing a six-segment receipt; pass `responseBody` to have segment 6 cover delivery |
+| `ledgeroot_pay` | Constrained x402 payment (idempotent dedupe + task grouping), producing a six-segment receipt; pass the seller's `quote` and the receipt commits to it, and `responseBody` to have segment 6 cover delivery |
 | `ledgeroot_mandate_sign` | Sign an authorization with the local key on the spot (`id` is optional and auto-generated) |
 | `ledgeroot_mandate_import` | Import an AP2-style authorization (**a failed signature check is an outright rejection**) |
 | `ledgeroot_mandate_list` | List active authorizations |
@@ -341,7 +342,6 @@ src/
   anchor/        RFC 6962 Merkle (root / inclusion proofs) + anchorer (viem)
   verify/        offline tri-state verifier + on-chain settlement content checks (ERC-3009 decoding)
   store/         SQLite append-only store (receipts / mandates / anchors / payment_intents)
-  wallet/        local key store / external wallet adapter
   x402/          facilitator integration (EIP-3009 authorization + /verify + /settle)
   tools/         the ten ledgeroot_* MCP tools
   mandate.ts     EIP-712 authorization (sign / verify / policy intersection)

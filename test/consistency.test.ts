@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { analyzeConsistency } from "../src/consistency.js";
 import { buildReceipt } from "../src/receipt/builder.js";
-import type { Mandate, Receipt, ReceiptSegments } from "../src/types.js";
+import { testSegments } from "./support.js";
+import type { Mandate, Receipt } from "../src/types.js";
 
 function mandate(overrides: Partial<Mandate> = {}): Mandate {
   return {
@@ -18,20 +19,10 @@ function mandate(overrides: Partial<Mandate> = {}): Mandate {
 }
 
 function receipt(overrides: Partial<Receipt> = {}): Receipt {
-  const segments: ReceiptSegments = {
-    intent: { text: "pay", timestamp: 1 },
-    mandate: { mandateId: "m-1", issuer: "0xissuer", policyIntersection: [] },
-    plan: {
-      quoteHash: "0x",
-      quote: {
-        amount: "0.1",
-        payTo: "0x35DA8C7a8d2253354925354b436A0422B9618dE4",
-      },
-    },
-    call: { policyResults: [] },
-    tx: {},
-    delivery: {},
-  };
+  const segments = testSegments({
+    amount: "0.1",
+    payTo: "0x35DA8C7a8d2253354925354b436A0422B9618dE4",
+  });
   return {
     ...buildReceipt({
       mandateId: "m-1",

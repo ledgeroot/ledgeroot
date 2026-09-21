@@ -1,6 +1,7 @@
 import type { PublicKey, Receipt } from "../types.js";
 import { SETTLEMENT_PROTOCOL_X402 } from "../types.js";
 import { recomputeReceiptHash } from "../receipt/builder.js";
+import { canonicalHash } from "../receipt/hashchain.js";
 import { RECEIPT_ALG, verifyReceiptSignature } from "../receipt/signing.js";
 import { merkleRoot } from "../anchor/merkle.js";
 
@@ -40,6 +41,17 @@ function result(issues: Issue[]): VerificationResult {
 function verifyReceiptSelf(receipt: Receipt): Issue[] {
   if (recomputeReceiptHash(receipt) === receipt.receiptHash) return [];
   return [tampered(`receipt ${receipt.id}: self hash mismatch`)];
+}
+
+/**
+ * The plan segment commits to the quote by hash. Recomputing that hash is what
+ * makes it a commitment rather than a label: a quote swapped after signing, or
+ * a hash that never covered anything, is a definite mismatch.
+ */
+function verifyPlan(receipt: Receipt): Issue[] {
+  const { quoteHash, quote } = receipt.segments.plan;
+  if (canonicalHash(quote) === quoteHash) return [];
+  return [tampered(`receipt ${receipt.id}: plan.quoteHash does not commit to the recorded quote`)];
 }
 
 /**
@@ -95,6 +107,7 @@ function verifyAttribution(receipt: Receipt, keys: PublicKey[]): Issue[] {
 export function verifyReceipt(receipt: Receipt, keys: PublicKey[] = []): VerificationResult {
   return result([
     ...verifyReceiptSelf(receipt),
+    ...verifyPlan(receipt),
     ...verifySettlement(receipt),
     ...verifyAttribution(receipt, keys),
   ]);
@@ -116,6 +129,7 @@ export function verifyReceiptChain(
   receipts.forEach((receipt, index) => {
     issues.push(
       ...verifyReceiptSelf(receipt),
+      ...verifyPlan(receipt),
       ...verifySettlement(receipt),
       ...verifyAttribution(receipt, keys),
     );

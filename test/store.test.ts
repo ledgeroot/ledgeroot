@@ -4,22 +4,11 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { LedgerootStore } from "../src/store/db.js";
 import { buildReceipt } from "../src/receipt/builder.js";
 import { verifyAnchor, verifyReceiptChain } from "../src/verify/verifier.js";
-import { TEST_PUBLIC_KEY, sign } from "./support.js";
-import type { Mandate, Receipt, ReceiptSegments } from "../src/types.js";
+import { TEST_PUBLIC_KEY, sign, testSegments } from "./support.js";
+import type { Mandate, Receipt } from "../src/types.js";
 
 const DB = "/tmp/cc-store-test.sqlite";
 const LEGACY_DB = "/tmp/cc-store-legacy.sqlite";
-
-function segments(): ReceiptSegments {
-  return {
-    intent: { text: "buy search data", timestamp: 1 },
-    mandate: { mandateId: "m-1", issuer: "0xissuer", policyIntersection: [] },
-    plan: { quoteHash: "0xquote", quote: { amount: "0.1" } },
-    call: { policyResults: [] },
-    tx: {},
-    delivery: {},
-  };
-}
 
 /** A signed, hash-chained run of receipts built within one millisecond. */
 function chained(count: number, timestamp: number): Receipt[] {
@@ -32,7 +21,7 @@ function chained(count: number, timestamp: number): Receipt[] {
           buildReceipt({
             status: "denied",
             reason: `receipt ${i}`,
-            segments: segments(),
+            segments: testSegments(),
             prevHash: out.at(-1)?.receiptHash,
           }),
         ),
@@ -115,8 +104,8 @@ describe("store migration", () => {
       `INSERT INTO receipts (id, status, receipt_json, created_at)
        VALUES (?, 'denied', ?, 1000)`,
     );
-    const older = { id: "ff", receiptHash: "ff", status: "denied", timestamp: 1000, segments: segments() };
-    const newer = { id: "00", receiptHash: "00", status: "denied", timestamp: 1000, segments: segments() };
+    const older = { id: "ff", receiptHash: "ff", status: "denied", timestamp: 1000, segments: testSegments() };
+    const newer = { id: "00", receiptHash: "00", status: "denied", timestamp: 1000, segments: testSegments() };
     insert.run(older.id, JSON.stringify(older));
     insert.run(newer.id, JSON.stringify(newer));
     legacy.close();
@@ -126,7 +115,7 @@ describe("store migration", () => {
     expect(store.listReceipts().map((r) => r.id)).toEqual(["ff", "00"]);
 
     // New receipts continue the sequence rather than colliding with it.
-    const next = buildReceipt({ status: "denied", reason: "after migration", segments: segments() });
+    const next = buildReceipt({ status: "denied", reason: "after migration", segments: testSegments() });
     store.appendReceipt(next);
     expect(store.lastReceipt()?.id).toBe(next.id);
     store.close();
@@ -158,8 +147,8 @@ describe("store migration", () => {
       `INSERT INTO receipts (seq, id, status, receipt_json, created_at)
        VALUES (?, ?, 'denied', ?, 1000)`,
     );
-    const first = { id: "ff", receiptHash: "ff", status: "denied", timestamp: 1000, segments: segments() };
-    const second = { id: "00", receiptHash: "00", status: "denied", timestamp: 1000, segments: segments() };
+    const first = { id: "ff", receiptHash: "ff", status: "denied", timestamp: 1000, segments: testSegments() };
+    const second = { id: "00", receiptHash: "00", status: "denied", timestamp: 1000, segments: testSegments() };
     // Out of id order, and both carrying seq 1: the rebuild renumbers in append
     // order rather than trusting a value the old scheme could get wrong.
     insert.run(1, first.id, JSON.stringify(first));

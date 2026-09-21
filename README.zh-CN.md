@@ -168,7 +168,7 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 |---|---|---|
 | 1. **意图** | 自然语言说明 agent 为什么付这笔钱 | `segments.intent.text` |
 | 2. **授权** | 覆盖本次支付的 mandate + **策略交集**（mandate 实际约束了哪几条策略） | `segments.mandate` |
-| 3. **计划** | 原始 402 报价的规范哈希 + 报价本身（`amount` / `payTo` / `endpoint`） | `segments.plan` |
+| 3. **计划** | 卖家发来的 402 报价**原样**，加上它的规范哈希 —— `payTo` 与报价金额都从这里读，因此"策略判定的是什么"与"收据记录的是什么"是同一个对象 | `segments.plan` |
 | 4. **调用** | **逐条策略的判定结果**，放行的和拒付的都记 | `segments.call.policyResults` |
 | 5. **交易** | 结算协议 + `txHash` + `chainId` + `payer` | `segments.tx` |
 | 6. **交付** | 只存**响应体的哈希与字节数**，不存原文 | `segments.delivery` |
@@ -180,6 +180,7 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 - **哈希链证"内容没被改"，签名证"谁做的陈述"。** 两者独立：内容被改并重新哈希后链校验仍能通过，只有签名能发现。
 - 公钥以 **JWKS** 发布（`npx ledgeroot jwks`），并随证据包一起导出，第三方**无需连回即可验签**。
 - **第六段只能由调用方回报**（`ledgeroot_pay` 的 `responseBody`）。Ledgeroot 结算支付，但**不抓取资源**——响应体只有 agent 见过，所以这一段的哈希只能由调用方提供。
+- **第三段是可验证的，不只是描述性的。** 报价原样存储并由哈希承诺，验证方会重算 `canonicalHash(segments.plan.quote)` 做比对。**签名后偷换报价**会被这条抓住——即使把收据重新哈希并重新签名也一样。而 `payTo` 与报价金额取自同一个对象，调用方也就无法一边传一个合规的 `payTo`、一边让报价指向别处。
 
 ### 签名密钥与支付密钥是分离的
 
@@ -199,7 +200,7 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 | 状态 | 含义 |
 |---|---|
 | `verified` | 全部检查通过 |
-| `tampered` | **字节被检查过，对不上** —— 自哈希不符 / `prevHash` 断链 / 首张带 `prevHash` / 重算 epoch 根与锚定根不符 / 已锚定 epoch 内的收据缺失 / 签名不符 / `alg` 不受支持 |
+| `tampered` | **字节被检查过，对不上** —— 自哈希不符 / `prevHash` 断链 / 首张带 `prevHash` / `plan.quoteHash` 与所记录的报价对不上 / 重算 epoch 根与锚定根不符 / 已锚定 epoch 内的收据缺失 / 签名不符 / `alg` 不受支持 |
 | `incomplete` | **证据缺失或取不到** —— 未签名 / 验证方不持有该 `kid` / 已付收据缺 `txHash` / 锚定记录无边界 / 未知结算协议 / 节点不可达 |
 
 **这条界线是整个产品最重要的纪律**：`tampered` 优先于 `incomplete`，而**取不到证据绝不报成被篡改**。把网络故障报成篡改，会让告警整体失去可信度；反过来把缺失当放行，就是宣称做了一次没做的检查。
@@ -303,7 +304,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 
 | 工具 | 作用 |
 |---|---|
-| `ledgeroot_pay` | 受约束 x402 支付（幂等去重 + 任务关联），出六段收据；传 `responseBody` 让第六段覆盖交付 |
+| `ledgeroot_pay` | 受约束 x402 支付（幂等去重 + 任务关联），出六段收据；传卖家发来的 `quote`，收据即对它作出承诺；传 `responseBody` 让第六段覆盖交付 |
 | `ledgeroot_mandate_sign` | 本地私钥现场签发授权令（`id` 可省略，自动生成） |
 | `ledgeroot_mandate_import` | 导入 AP2 风格授权令（**验签失败直接拒绝**） |
 | `ledgeroot_mandate_list` | 列出有效授权 |
@@ -341,7 +342,6 @@ src/
   anchor/        RFC 6962 Merkle（根 / 包含证明）+ 锚定器（viem）
   verify/        离线三态验证器 + 链上结算内容校验（ERC-3009 解码比对）
   store/         SQLite append-only 存储（receipts / mandates / anchors / payment_intents）
-  wallet/        本地密钥库 / 外部钱包适配
   x402/          facilitator 集成（EIP-3009 授权 + /verify + /settle）
   tools/         十个 ledgeroot_* MCP 工具
   mandate.ts     EIP-712 授权令（签发 / 验签 / 策略交集）
