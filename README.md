@@ -108,11 +108,42 @@ npm run anchor -- --db ./ledgeroot.sqlite
 
 ---
 
+## Buying a resource (the 402 flow)
+
+`ledgeroot_pay` settles a payment whose quote the caller already holds — because the host did the 402 handshake somewhere else, where the audit trail cannot see it. `ledgeroot_buy` goes and gets the quote itself:
+
+```text
+1  fetch the resource      → 402 carrying the seller's requirements
+2  pick a rail we can pay  → the one network this build registers
+3  run every policy        → against *those* requirements, before signing
+4  sign the authorization  → only if step 3 allowed it
+5  retry with the payment  → the seller settles through its own facilitator
+6  record the receipt      → quote in segment 3, settlement in 5,
+                             the hash of the response body in segment 6
+```
+
+The gate sits at the **signing boundary**, the last point at which refusing is still free. A denial is recorded as a `denied` receipt **carrying the seller's own quote**, next to the verdict of every policy that ran — so a purchase blocked at a real seller is on the record, with its reason.
+
+| Outcome | Meaning |
+|---|---|
+| `paid` | the seller accepted a payment; the receipt carries the settlement and the delivery hash |
+| `denied` | policy refused, or the seller offers no rail this build can pay on. **Either way nothing was signed** and the attempt is recorded; the quote is empty when the seller never got as far as naming one |
+| `unpaid` | the resource came back without a payment (a free tier, or a trial). **No receipt** — there is no payment to attest |
+
+A failure *after* the gate — a transport error, or a seller that asks for payment again after one was offered — is **thrown rather than classified**, because whether it settled is unknown. The idempotency claim is kept, so a retry refuses instead of buying twice.
+
+> 📌 The protocol half of this — read the 402, create the payload, retry, settle — is [`@x402/fetch`](https://www.npmjs.com/package/@x402/fetch). We register one rail and one gate on top of it. Re-implementing the handshake would only produce a second, worse copy, and the interesting question was never who can do the HTTP dance.
+
+> ⚠️ **The sellers we buy from are mainnet-only.** agent402's live 402 offers `eip155:143` (Monad mainnet) among twelve chains, and **nothing on testnet**. `ledgeroot_buy` therefore defaults to `chainId: 143`, and a real purchase is a real — if tiny — payment.
+
+---
+
 ## Why Ledgeroot?
 
 - **Fail-closed by construction.** Every policy runs; the first denial stops the payment and is itself recorded. There is no path where a check is skipped and the payment proceeds.
 - **Verifiable, not just logged.** Receipts are Ed25519-signed, hash-chained and committed to an epoch Merkle root on-chain. A third party verifies them offline — no call home, no vendor in the loop.
 - **Denials are evidence.** A blocked attempt produces the same signed receipt a successful one does. That is the only place a blocked agent task is visible.
+- **It buys, not just settles.** `ledgeroot_buy` fetches the resource itself, so the quote it judges is the one the seller actually sent, and segment 6 is the body it actually received.
 - **One key moves money, another attests.** The signing key and the payment key deliberately do not fall back to each other.
 - **Money never touches a float.** Six-decimal bigint arithmetic throughout.
 - **Honest about what it does not know.** Missing evidence reports `incomplete`; it is never reported as tampering, and never waved through.
@@ -275,7 +306,8 @@ The honest section. These are limits of the **current implementation**, not a re
 
 | Limit | Current state |
 |---|---|
-| **The chain is hard-coded** | `MONAD_TESTNET_X402` is the only instance, and no environment variable can switch chains or USDC contracts. The `FacilitatorNetworkConfig` type already extracts chainId / network / scheme / USDC / domain, so **this is adding instances rather than refactoring** — but it makes "testnet → mainnet" a code change instead of a config change today |
+| **The pay path is still testnet-only** | `X402_NETWORKS` holds two instances (Monad testnet 10143, mainnet 143) and `ledgeroot_buy` chooses between them by `chainId`. **`ledgeroot_pay` does not**: `bootstrap.ts` still hands the facilitator `MONAD_TESTNET_X402` unconditionally, with no environment variable able to move it |
+| **A mainnet purchase cannot be chain-checked yet** | `USDC_BY_CHAIN` knows Monad testnet's USDC only, so `--check-chain` on a mainnet receipt reports `incomplete`. The missing piece is per-chain RPC configuration, deliberately absent rather than defaulted: one RPC URL asked about another chain's transaction would report a false `tampered` |
 | **MPP is a seam, not an implementation** | `segments.tx.protocol` is an explicit dimension: **an unknown protocol reports `incomplete`** — neither waved through nor wrongly accused. But MPP's field-level shape is undecided, so no payload shape is assumed and no provider exists. Tracked as the top item in the [roadmap](./docs/roadmap.md) |
 | **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
 | **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
@@ -283,7 +315,7 @@ The honest section. These are limits of the **current implementation**, not a re
 | **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
 | **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
 | **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
-| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 106 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
+| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 114 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
 | **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
 | **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
 
@@ -300,10 +332,11 @@ The honest section. These are limits of the **current implementation**, not a re
 
 ---
 
-## The ten `ledgeroot_*` tools
+## The eleven `ledgeroot_*` tools
 
 | Tool | What it does |
 |---|---|
+| `ledgeroot_buy` | **Fetch a URL and pay the 402 it answers with.** Every policy runs before the payment is signed; the response body is hashed into segment 6 |
 | `ledgeroot_pay` | Constrained x402 payment (idempotent dedupe + task grouping), producing a six-segment receipt; pass the seller's `quote` and the receipt commits to it, and `responseBody` to have segment 6 cover delivery |
 | `ledgeroot_mandate_sign` | Sign an authorization with the local key on the spot (`id` is optional and auto-generated) |
 | `ledgeroot_mandate_import` | Import an AP2-style authorization (**a failed signature check is an outright rejection**) |
@@ -342,8 +375,8 @@ src/
   anchor/        RFC 6962 Merkle (root / inclusion proofs) + anchorer (viem)
   verify/        offline tri-state verifier + on-chain settlement content checks (ERC-3009 decoding)
   store/         SQLite append-only store (receipts / mandates / anchors / payment_intents)
-  x402/          facilitator integration (EIP-3009 authorization + /verify + /settle)
-  tools/         the ten ledgeroot_* MCP tools
+  x402/          facilitator integration (EIP-3009 authorization + /verify + /settle) + the buyer (@x402/fetch with our policy gate at the signing boundary)
+  tools/         the eleven ledgeroot_* MCP tools
   mandate.ts     EIP-712 authorization (sign / verify / policy intersection)
   consistency.ts post-hoc authorization-vs-execution analysis (did any paid receipt exceed its mandate)
   decimal.ts     USDC six-decimal bigint arithmetic, no floating point
@@ -354,7 +387,7 @@ contracts/       LedgerootAnchor (Solidity 0.8.24 + Foundry)
 deploy/          Monad testnet deployment config
 docs/            architecture review / roadmap / competitor and standards research / commercialization
 assets/          logo lockups (light + dark)
-test/            106 tests across 12 files
+test/            114 tests across 13 files
 ```
 
 ---

@@ -16,4 +16,6 @@ export * from "./verify/verifier.js";
 export * from "./consistency.js";
 export * from "./store/db.js";
 export * from "./x402/facilitator.js";
+export * from "./x402/buyer.js";
 export * from "./tools/pay.js";
+export * from "./tools/buy.js";

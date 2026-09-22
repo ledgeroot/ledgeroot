@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LedgerootServices } from "../context.js";
 import { handlePay, payInput } from "./pay.js";
+import { buyInput, handleBuy } from "./buy.js";
 import {
   importMandate,
   mandateSign,
@@ -41,6 +42,17 @@ export function createToolRouter(server: McpServer, services: LedgerootServices)
       inputSchema: payInput,
     },
     async (args) => text(await handlePay(services, args)),
+  );
+
+  server.registerTool(
+    "ledgeroot_buy",
+    {
+      title: "Buy a resource under a mandate",
+      description:
+        "Fetch a URL, pay the 402 it answers with under a mandate, and record what came back. Every policy runs before the payment is signed, and the response body is hashed into segment 6.",
+      inputSchema: buyInput,
+    },
+    async (args) => text(await handleBuy(services, args)),
   );
 
   server.registerTool(

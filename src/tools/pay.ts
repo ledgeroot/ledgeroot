@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import { buildReceipt } from "../receipt/builder.js";
+import { buildSegments as buildSegmentsFrom } from "../receipt/segments.js";
 import { canonicalHash, contentHash } from "../receipt/hashchain.js";
 import { signReceipt } from "../receipt/signing.js";
 import { getSigningKey } from "../env.js";
@@ -75,16 +76,17 @@ function readQuote(quote: Record<string, unknown>): { payTo: string; quoteAmount
   return { payTo, quoteAmount: amount };
 }
 
-function cumulativeSpent(services: LedgerootServices, mandateId: string): string {
+export function cumulativeSpent(services: LedgerootServices, mandateId: string): string {
   return services.store
     .listReceipts({ mandateId, status: "paid" })
     .reduce((sum, receipt) => add(sum, receipt.amount ?? "0"), "0");
 }
 
-function callTimestamps(services: LedgerootServices, endpoint: string): number[] {
+export function callTimestamps(services: LedgerootServices, endpoint: string): number[] {
   return services.store.listReceipts({ endpoint }).map((receipt) => receipt.timestamp);
 }
 
+/** Segments 1–4 for a payment attempt, with the quote stored whole. */
 function buildSegments(
   input: PayInput,
   quoteHash: string,
@@ -92,17 +94,15 @@ function buildSegments(
   issuer: string,
   policyIntersection: string[],
 ): ReceiptSegments {
-  const now = Date.now();
-  return {
-    intent: { text: input.intent, timestamp: now },
-    mandate: { mandateId: input.mandateId, issuer, policyIntersection },
-    // The quote is stored whole, so the hash above can be recomputed from the
-    // receipt and a swapped quote fails verification instead of passing.
-    plan: { quoteHash, quote: input.quote },
-    call: { policyResults },
-    tx: {},
-    delivery: {},
-  };
+  return buildSegmentsFrom({
+    intent: input.intent,
+    mandateId: input.mandateId,
+    quote: input.quote,
+    quoteHash,
+    policyResults,
+    issuer,
+    policyIntersection,
+  });
 }
 
 /**
@@ -111,7 +111,7 @@ function buildSegments(
  * the hash is computed without changing it — and so the hash chain, the epoch
  * Merkle root and the signature all commit to the same value.
  */
-function record(services: LedgerootServices, receipt: Receipt): void {
+export function record(services: LedgerootServices, receipt: Receipt): void {
   const key = getSigningKey();
   const signed = key ? { ...receipt, signature: signReceipt(receipt.receiptHash, key) } : receipt;
   services.store.appendReceipt(signed);

@@ -108,11 +108,42 @@ npm run anchor -- --db ./ledgeroot.sqlite
 
 ---
 
+## 买入一个资源（402 流程）
+
+`ledgeroot_pay` 结算的是**调用方手里已经有报价**的支付——因为 402 握手是宿主在别处做的，而那里发生的事审计轨迹看不见。`ledgeroot_buy` 自己去把报价拿来：
+
+```text
+1  请求资源          → 402，带着卖家的支付要求
+2  选一条能付的轨     → 本构建只注册的那一条网络
+3  跑全部策略        → 对着*那份*报价，在签名之前
+4  签授权            → 只有第 3 步放行才签
+5  带支付重试        → 由卖家经它自己的 facilitator 结算
+6  记收据            → 报价进第三段、结算进第五段、
+                        响应体的哈希进第六段
+```
+
+闸门卡在**签名那一刻**——那是"拒绝仍然免费"的最后一个时点。被拒绝会写成一张 `denied` 收据，**带上卖家自己的报价**，并列出每一条跑过的策略的判定：一次在真实卖家处被拦下的采购，连同原因一起留在账上。
+
+| 结果 | 含义 |
+|---|---|
+| `paid` | 卖家收下了支付；收据带结算信息与交付哈希 |
+| `denied` | 策略拒绝，或卖家提供的轨我们都付不了。**两种情况下都没有签名**，尝试都会记录；卖家还没报出报价时，收据里的报价是空的 |
+| `unpaid` | 资源在没有支付的情况下返回（免费额度或 trial）。**不写收据**——没有支付可证明 |
+
+**闸门之后**的失败——传输错误，或我们递了支付之后卖家仍要钱——是**抛出而不是归类**，因为是否已结算在此无从得知。幂等占位会保留，所以重试是拒绝，而不是再买一次。
+
+> 📌 这一半的协议实现——读 402、造 payload、重试、结算——是 [`@x402/fetch`](https://www.npmjs.com/package/@x402/fetch)。我们在它上面注册**一条轨**和**一道闸门**。自己重写握手只会得到一份更差的副本，而真正有意思的问题从来不是谁会跳那段 HTTP 舞。
+
+> ⚠️ **我们要买的卖家只收主网。** agent402 实时 402 在十二条链里给了 `eip155:143`（Monad 主网），**测试网上一条都没有**。所以 `ledgeroot_buy` 默认 `chainId: 143`，而一次真实采购就是一次真实的（虽然很小的）支付。
+
+---
+
 ## 为什么用 Ledgeroot
 
 - **fail-closed 是结构性的。** 每条策略都跑，第一个拒绝即中止支付，并且**拒绝本身也被记录**。不存在"跳过一次检查然后放行"的路径。
 - **可验证，不只是有日志。** 收据带 Ed25519 签名、哈希链互锁、commit 到链上 epoch Merkle 根。第三方**离线**即可验证——不连回、不经手任何厂商。
 - **拒付也是证据。** 被拦下的尝试与成功的支付产生同样格式的签名收据。那是 agent 任务失败唯一能被看见的地方。
+- **它真的去买，不只是结算。** `ledgeroot_buy` 自己去取资源，所以它据以判定的报价就是卖家发来的那一份，而第六段是它**实际收到**的响应体。
 - **一把钥匙动钱，一把钥匙作证。** 收据签名密钥与支付密钥刻意不互相回落。
 - **钱不碰浮点。** 全程六位小数 bigint 运算。
 - **对"不知道"诚实。** 证据缺失报 `incomplete`，**绝不报成被篡改**，也绝不放行。
@@ -275,7 +306,8 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 
 | 边界 | 现状 |
 |---|---|
-| **链是硬编码的** | `MONAD_TESTNET_X402` 是唯一实例，没有环境变量能切链或换 USDC 合约。`FacilitatorNetworkConfig` 类型已把 chainId / network / scheme / USDC / domain 全抽出来，所以**这是补实例而非重构**——但它让「测试网 → 主网」目前是改代码而不是改配置 |
+| **支付路径仍然只支持测试网** | `X402_NETWORKS` 现在有两个实例（Monad 测试网 10143、主网 143），`ledgeroot_buy` 按 `chainId` 二选一。**`ledgeroot_pay` 没有**：`bootstrap.ts` 仍然无条件把 `MONAD_TESTNET_X402` 交给 facilitator，也没有环境变量能改 |
+| **主网采购还无法做链上核对** | `USDC_BY_CHAIN` 只认得 Monad 测试网的 USDC，所以对主网收据跑 `--check-chain` 会报 `incomplete`。缺的是**按链配置 RPC**——刻意留空而不是给默认值：拿一个 RPC 去问另一条链的交易，会报出**假的 `tampered`** |
 | **MPP 只有接缝，没有实现** | `segments.tx.protocol` 是显式维度：**未知协议报 `incomplete`，不放行也不冤枉**。但 MPP 的字段级形状未定，所以没有预设载荷，也没有 provider。**这是 [roadmap.md](./docs/roadmap.md) 里排在第一位的待补项** |
 | **热路径未加索引** | 全库没有一个 `CREATE INDEX`：单笔支付有 4 次未索引全表扫描，其中两次还会 `JSON.parse` 整个匹配集。单笔 O(n)，一个月 O(n²) |
 | **单进程、单租户** | 一个库、一把签名钥、一把付款钥。数据模型里没有租户边界——`agentId` / `mandateId` 不是隔离键 |
@@ -283,7 +315,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](https://github.com/ledgeroot/mandatekey) 的证据包里 |
 | **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
-| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、106 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
+| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、114 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
 | **没有聚合层** | 全库没有一处 SQL 聚合（无 `GROUP BY` / `SUM` / `COUNT`），也没有对账导出。这是生态位里唯一能收费的那一层，目前**完全不存在** |
 | **ERC-8004 只埋了字段** | `Mandate.agentId` 存在但未接注册表校验 |
 
@@ -300,10 +332,11 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 
 ---
 
-## 十个 `ledgeroot_*` 工具
+## 十一个 `ledgeroot_*` 工具
 
 | 工具 | 作用 |
 |---|---|
+| `ledgeroot_buy` | **取一个 URL，付掉它回的 402。** 所有策略在签名之前跑完；响应体哈希进第六段 |
 | `ledgeroot_pay` | 受约束 x402 支付（幂等去重 + 任务关联），出六段收据；传卖家发来的 `quote`，收据即对它作出承诺；传 `responseBody` 让第六段覆盖交付 |
 | `ledgeroot_mandate_sign` | 本地私钥现场签发授权令（`id` 可省略，自动生成） |
 | `ledgeroot_mandate_import` | 导入 AP2 风格授权令（**验签失败直接拒绝**） |
@@ -342,8 +375,8 @@ src/
   anchor/        RFC 6962 Merkle（根 / 包含证明）+ 锚定器（viem）
   verify/        离线三态验证器 + 链上结算内容校验（ERC-3009 解码比对）
   store/         SQLite append-only 存储（receipts / mandates / anchors / payment_intents）
-  x402/          facilitator 集成（EIP-3009 授权 + /verify + /settle）
-  tools/         十个 ledgeroot_* MCP 工具
+  x402/          facilitator 集成（EIP-3009 授权 + /verify + /settle）+ 买家（@x402/fetch，策略闸门卡在签名那一刻）
+  tools/         十一个 ledgeroot_* MCP 工具
   mandate.ts     EIP-712 授权令（签发 / 验签 / 策略交集）
   consistency.ts 授权-执行一致性分析（事后复核：已付收据是否越权）
   decimal.ts     USDC 六位小数 bigint 运算，无浮点
@@ -354,7 +387,7 @@ contracts/       LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/          Monad testnet 部署配置
 docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方向
 assets/          字标（亮 / 暗两版）
-test/            12 个文件、106 个测试
+test/            13 个文件、114 个测试
 ```
 
 ---

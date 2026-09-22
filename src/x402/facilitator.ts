@@ -62,6 +62,30 @@ export const MONAD_TESTNET_X402: FacilitatorNetworkConfig = {
 /** Monad's official x402 facilitator (public, no API key). */
 export const MONAD_FACILITATOR_URL = "https://x402-facilitator.molandak.org";
 
+/**
+ * Monad mainnet USDC (6 decimals).
+ *
+ * Same shape as testnet, which is what makes testnet → mainnet an instance
+ * rather than a rewrite. It matters because the x402 sellers we buy from serve
+ * mainnet only: agent402's live 402 offers `eip155:143` and nothing on `10143`.
+ * The address and the EIP-712 domain below are taken from that live
+ * requirement, because a buyer has to satisfy the seller's terms, not ours.
+ */
+export const MONAD_MAINNET_X402: FacilitatorNetworkConfig = {
+  chainId: 143,
+  network: "eip155:143",
+  scheme: "exact",
+  usdcAddress: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+  usdcDomainName: "USDC",
+  usdcDomainVersion: "2",
+};
+
+/** The rails this build knows how to pay on, by chain id. */
+export const X402_NETWORKS: Record<number, FacilitatorNetworkConfig> = {
+  [MONAD_TESTNET_X402.chainId]: MONAD_TESTNET_X402,
+  [MONAD_MAINNET_X402.chainId]: MONAD_MAINNET_X402,
+};
+
 /** Deterministic payment provider for dry-run demos — no network, no wallet. */
 export class DryRunPaymentProvider implements PaymentProvider {
   private sequence = 0;
