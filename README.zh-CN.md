@@ -160,7 +160,7 @@ npm run anchor -- --db ./ledgeroot.sqlite
 
 这个位由**费率结构**保证，不由技术优势保证：$0.30 + 2.9% 的卡组织费率摊在 $0.005 上等于 6000%，**物理上不可行**。所以 x402 存在；也所以我们**不做大额**——大额有发票、合同、退款流程，那是 Shopify / Stripe / Visa TAP / Mastercard 的地盘。
 
-> ⚠️ 费率结构排除的是**按交易金额抽成**的对手，**不排除**按负载计费、把支付当平台功能送的云厂商——见 [aws-agentcore-payments-analysis.md](./docs/aws-agentcore-payments-analysis.md) §6.2。
+> ⚠️ 费率结构排除的是**按交易金额抽成**的对手，**不排除**按负载计费、把支付当平台功能送的云厂商——见 [competitors.md](./docs/competitors.md) §二。
 
 在这个位里，Ledgeroot 只做三件事：
 
@@ -412,14 +412,15 @@ test/            13 个文件、114 个测试
 
 | 文档 | 内容 |
 |---|---|
-| [aws-agentcore-payments-analysis.md](./docs/aws-agentcore-payments-analysis.md) | **AWS Bedrock AgentCore payments（2026-08-18 GA）深度分析**：第一个同时是分发垄断者与能力竞品的对手，以及它在我们"费率结构护城河"上打出的洞 |
-| [architecture-gaps.md](./docs/architecture-gaps.md) | 源码级架构评估：已修的真 bug（崩溃窗口 / `seq` 分配）、规模差距、多协议接缝 |
-| [roadmap.md](./docs/roadmap.md) | 行动规划：P0 正确性（D1–D8 已清）→ P1 差异化 → P2 可见性 → P3 公信力；含待定决策 Q1–Q9 |
-| [threat-landscape.md](./docs/threat-landscape.md) | 威胁全景：载波（PEAC / x402 草案 / IETF）、分发垄断者（Coinbase、卡组织、**AWS**）、直接竞品、监管时钟 |
-| [standards-landscape.md](./docs/standards-landscape.md) | 学术与标准层调研：OAP、Vaara Receipt、x402 与 MPP 并列支持的依据 |
-| [vaara-competitive-analysis.md](./docs/vaara-competitive-analysis.md) | 最接近的对手：自托管 + 断网单文件验证 + held-set completeness |
-| [trustbench-competitive-analysis.md](./docs/trustbench-competitive-analysis.md) | 同名撞车与逐条源码核验 |
+| [README.md](./docs/README.md) | 文档索引与阅读顺序 |
+| [architecture.md](./docs/architecture.md) | 源码级架构评估：已做对的、规模层面的债、零外泄 vs 聚合的张力、链配置与协议接缝 |
+| [roadmap.md](./docs/roadmap.md) | 行动规划：P0 正确性（已清）→ P1 差异化 → P2 可见性 → P3 公信力；含差距清单 N1–N15 与待定决策 Q1–Q17 |
 | [commercialization.md](./docs/commercialization.md) | 生态位、四个取舍、商业模式分层、现在**绝不**做的事 |
+| [landscape.md](./docs/landscape.md) | 威胁分类法（载波 / 分发垄断者 / 直接竞品 / 监管时钟）、商品化半衰期、**监控触发条件** |
+| [competitors.md](./docs/competitors.md) | 四个核心对手的深度拆解：Vaara、AWS AgentCore payments、TrustBench、Semantica（相邻） |
+| [standards.md](./docs/standards.md) | 学术与标准全景：OAP、Vaara Receipt、IETF 草案、x402 与 MPP 并列支持的依据 |
+| [tokenized-equities.md](./docs/tokenized-equities.md) | 第二个垂直：Uniswap permissioned pools × 代币化股票，与两条 SEC 提案线 |
+| [sec-comment-s7-2026-30.md](./docs/sec-comment-s7-2026-30.md) | ⚠️ 给 SEC File S7-2026-30 的评论信**草稿**（标注 DRAFT，不可原样提交） |
 
 ---
 
@@ -433,7 +434,7 @@ MIT © 2026 Ledgeroot
 
 **[自己验一遍——不必信我们。](#快速开始)**
 
-⭐ **[Star](https://github.com/ledgeroot/ledgeroot)** · 📖 **[English README](./README.md)** · 🗺️ **[路线图](./docs/roadmap.md)** · 🛡️ **[威胁全景](./docs/threat-landscape.md)**
+⭐ **[Star](https://github.com/ledgeroot/ledgeroot)** · 📖 **[English README](./README.md)** · 🗺️ **[路线图](./docs/roadmap.md)** · 🛡️ **[威胁全景](./docs/landscape.md)**
 
 <sub>MIT · 无 SaaS · 无遥测 · 私钥永不出本机</sub>
 

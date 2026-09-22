@@ -1,7 +1,7 @@
 # Comment on SEC File No. S7-2026-30 — Draft
 
 > **STATUS: DRAFT. Do not file as-is.**
-> Before filing, complete §I (Commenter) and decide the signature question (see `docs/tokenized-equities-opportunity-map.md` Q14). The comment and everything in it becomes a public, permanently attributable U.S. government record.
+> Before filing, complete §I (Commenter) and decide the signature question (see [tokenized-equities.md](./tokenized-equities.md) §十二 Q14). The comment and everything in it becomes a public, permanently attributable U.S. government record.
 >
 > **Filing mechanics (verified 2026-09-18):**
 > - File No. **S7-2026-30** · Release No. **34-106246** · RIN 3235-AL55
