@@ -79,6 +79,8 @@ Then it is all conversation:
 node dist/cli.js verify [--db <path>] [--check-chain]   # offline verification (+ optional chain check)
 node dist/cli.js export [--db <path>]                   # evidence bundle as JSON
 node dist/cli.js anchor [--db <path>]                   # submit the epoch Merkle root on-chain
+node dist/cli.js buy <url> --mandate <id> \
+  [--method POST] [--body '<json>'] [--chain 143]        # fetch a URL, pay its 402, record the receipt
 node dist/cli.js jwks                                   # the JWKS a third party needs
 node dist/cli.js serve                                  # MCP server over stdio
 ```

@@ -79,6 +79,8 @@ claude mcp add ledgeroot \
 node dist/cli.js verify [--db <path>] [--check-chain]   # 离线验证（可选加链上校验）
 node dist/cli.js export [--db <path>]                   # 导出证据包 JSON
 node dist/cli.js anchor [--db <path>]                   # 提交 epoch Merkle 根上链
+node dist/cli.js buy <url> --mandate <id> \
+  [--method POST] [--body '<json>'] [--chain 143]        # 取一个 URL、付掉它的 402、写下收据
 node dist/cli.js jwks                                   # 第三方验签所需的 JWKS
 node dist/cli.js serve                                  # 以 stdio 启动 MCP server
 ```
