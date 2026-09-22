@@ -41,6 +41,13 @@ export interface BuyRequest {
   network: `${string}:${string}`;
   signer: EvmSigner;
   /**
+   * Whether the target may be a private, loopback or link-local address.
+   * Defaults to false: an agent that can be steered toward an arbitrary URL must
+   * not be able to read this machine's own services or a cloud metadata
+   * endpoint. Local demos and tests opt in explicitly.
+   */
+  allowPrivateHosts?: boolean;
+  /**
    * The gate. Called once the seller's requirements are known and **before any
    * payload is created**; returning a reason refuses the purchase, and no
    * signature is produced after that.
@@ -101,7 +108,69 @@ function readSettlement(headers: Headers): BuyResult["settlement"] | undefined {
   }
 }
 
+/**
+ * Refuse targets that let a caller reach past the seller and into the host's own
+ * network. This is the SSRF boundary: the URL here is chosen by whoever calls
+ * the tool, and that caller is exactly the agent the mandate exists to constrain.
+ *
+ * Private, loopback, link-local and CGNAT ranges are blocked, along with the
+ * usual internal hostname suffixes. A hostname that resolves to a private
+ * address is not caught here — that would need a DNS lookup in the same window
+ * as the fetch — so the check is a floor, not a proof.
+ */
+function privateHostReason(rawUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return `"${rawUrl}" is not a valid URL`;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return `scheme "${url.protocol}" is not fetchable`;
+  }
+
+  const host = url.hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host === "metadata.google.internal"
+  ) {
+    return `host "${host}" is a private address`;
+  }
+
+  // IPv6 loopback, unspecified, unique-local (fc00::/7) and link-local (fe80::/10).
+  if (host === "::1" || host === "::" || /^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) {
+    return `host "${host}" is a private address`;
+  }
+  if (host.startsWith("::ffff:")) {
+    const embedded = host.slice("::ffff:".length);
+    return isPrivateV4(embedded) ? `host "${host}" is a private address` : null;
+  }
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    return isPrivateV4(host) ? `host "${host}" is a private address` : null;
+  }
+  return null;
+}
+
+function isPrivateV4(ip: string): boolean {
+  const [a, b] = ip.split(".").map(Number);
+  if (a === undefined || b === undefined) return true;
+  if (a === 0 || a === 127 || a === 10) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+}
+
 export async function buy(input: BuyRequest): Promise<BuyResult> {
+  if (!input.allowPrivateHosts) {
+    const blocked = privateHostReason(input.url);
+    if (blocked) return { kind: "denied", reason: blocked };
+  }
+
   const client = new x402Client();
   registerExactEvmScheme(client, {
     // A structural cast: the SDK types this as a full viem account, but the
@@ -135,6 +204,10 @@ export async function buy(input: BuyRequest): Promise<BuyResult> {
       method: input.method ?? "GET",
       headers: input.headers,
       body: input.body,
+      // Redirects are not followed. The SSRF guard above judged the URL we were
+      // handed; a 3xx would carry the request to a host that guard never saw and
+      // cannot vet. A payment client has no business chasing redirects anyway.
+      redirect: "manual",
     });
   } catch (error) {
     if (seen.denial !== undefined) {
@@ -154,6 +227,23 @@ export async function buy(input: BuyRequest): Promise<BuyResult> {
     // it was paid cannot be known from here. The caller has to treat that as
     // unknown rather than unpaid.
     throw error;
+  }
+
+  // A redirect that survives the manual mode. Before a payload exists nothing
+  // was signed, so it is a refusal; after one was offered we cannot know whether
+  // it settled, so it is thrown rather than classified — the same discipline as
+  // a 402 that arrives after payment.
+  if (response.status >= 300 && response.status < 400) {
+    if (seen.requirements !== undefined) {
+      throw new Error(
+        `the seller answered with a redirect (HTTP ${response.status}) after a payment was offered (${input.network}); whether it settled is unknown`,
+      );
+    }
+    return {
+      kind: "denied",
+      status: response.status,
+      reason: `the seller answered with a redirect (HTTP ${response.status}); refusing to follow it`,
+    };
   }
 
   const settlement = readSettlement(response.headers);

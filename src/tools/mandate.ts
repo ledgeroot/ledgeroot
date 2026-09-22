@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { LedgerootServices } from "../context.js";
 import { mandateSchema } from "../policy/schema.js";
 import { signMandate, verifyMandateSignature } from "../mandate.js";
-import { getPrivateKey } from "../env.js";
+import { getPrivateKey, isTrustedIssuer } from "../env.js";
 import type { Mandate } from "../types.js";
 
 export const mandateImportInput = {
@@ -26,6 +26,18 @@ export async function importMandate(
   const verification = await verifyMandateSignature(mandate);
   if (!verification.valid) {
     throw new Error(`mandate "${mandate.id}" has an invalid or missing signature`);
+  }
+  // A valid signature only proves the payload is internally consistent — it says
+  // nothing about whether the signer is the user. Without this check any caller
+  // can mint a permissive mandate (unbounded limits, empty allowlists) with a
+  // key of its own and then spend against it, which would make the whole
+  // "user-signed authorization" claim vacuous. The issuer has to be one this
+  // machine already trusts.
+  if (!isTrustedIssuer(verification.issuer)) {
+    throw new Error(
+      `mandate "${mandate.id}" is signed by ${verification.issuer}, which is not a trusted issuer ` +
+        `(set LEDGEROOT_TRUSTED_ISSUERS to allow it)`,
+    );
   }
   services.store.upsertMandate(mandate);
   return { imported: true, mandateId: mandate.id, issuer: verification.issuer };

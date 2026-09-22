@@ -249,14 +249,18 @@ describe("mandate records", () => {
     store.close();
   });
 
-  it("clears revocation when the same mandate is imported again", () => {
+  it("keeps revocation when the same mandate is imported again", () => {
     const store = new LedgerootStore({ path: DB });
     store.upsertMandate(mandate("m-1"));
     expect(store.revokeAllMandates()).toBe(1);
     expect(store.listMandateRecords()[0].revoked).toBe(true);
 
+    // Revocation is monotonic. Re-presenting the same signed authorization —
+    // which is exactly what an agent would do to escape the kill switch — must
+    // not clear the flag; otherwise the switch is undone by the party it was
+    // meant to stop.
     store.upsertMandate(mandate("m-1"));
-    expect(store.listMandateRecords()[0].revoked).toBe(false);
+    expect(store.listMandateRecords()[0].revoked).toBe(true);
     store.close();
   });
 });

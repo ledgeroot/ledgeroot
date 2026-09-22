@@ -8,7 +8,7 @@ import { buildReceipt } from "../receipt/builder.js";
 import { buildSegments } from "../receipt/segments.js";
 import { canonicalHash, contentHash } from "../receipt/hashchain.js";
 import { fromUnits } from "../decimal.js";
-import { getPrivateKey } from "../env.js";
+import { allowPrivateHosts, getPrivateKey } from "../env.js";
 import { computePolicyIntersection } from "../mandate.js";
 import { MONAD_MAINNET_X402, X402_NETWORKS } from "../x402/facilitator.js";
 import { buy, type GateVerdict, type PaymentRequirements } from "../x402/buyer.js";
@@ -92,7 +92,7 @@ export async function handleBuy(
       taskId: input.taskId,
       counterparty: new URL(input.url).host,
       endpoint: new URL(input.url).pathname,
-      amount: quotedAmount(quote),
+      amount: recordableAmount(quote),
       status: "denied",
       reason,
       segments: buildSegments({
@@ -135,6 +135,29 @@ export async function handleBuy(
     return recordDenial(reason, {});
   }
 
+  // The mandate's expiry is checked here, not only inside the policy engine
+  // (which does not model time): an expired authorization must not be able to
+  // reach the signing boundary at all.
+  if (mandate.expiresAt <= Math.floor(Date.now() / 1000)) {
+    const reason = `mandate "${mandate.id}" expired at ${mandate.expiresAt}`;
+    if (input.requestId) services.store.clearPaymentIntent(input.requestId);
+    return recordDenial(reason, {}, { issuer: mandate.issuer });
+  }
+
+  // The counterparty whitelist is enforced here, before the fetch. Inside the
+  // gate it would only run once the seller has already answered with a 402, so a
+  // free or non-402 response would be fetched from any host the caller names —
+  // the whitelist would constrain who gets *paid* but not who gets *contacted*.
+  const counterparty = new URL(input.url).host;
+  if (
+    mandate.counterpartyAllowlist.length > 0 &&
+    !mandate.counterpartyAllowlist.includes(counterparty)
+  ) {
+    const reason = `counterparty "${counterparty}" is not in the mandate whitelist`;
+    if (input.requestId) services.store.clearPaymentIntent(input.requestId);
+    return recordDenial(reason, {}, { issuer: mandate.issuer });
+  }
+
   const policyIntersection = computePolicyIntersection(
     mandate,
     services.engine.policies.map((policy) => policy.id),
@@ -144,10 +167,21 @@ export async function handleBuy(
   // policy that ran, not just the one that refused.
   let policyResults: ReceiptSegments["call"]["policyResults"] = [];
   const authorize = (requirements: PaymentRequirements): GateVerdict => {
-    const amount = quotedAmount(requirements);
+    // An amount the policies cannot read is refused, not coerced. Treating an
+    // unparsable amount as zero would let the limits pass trivially while the
+    // SDK signs whatever value the seller actually sent — a parser difference
+    // turned into a bypass.
+    const amount = parseQuotedAmount(requirements);
+    if (amount === null) {
+      policyResults = [];
+      return {
+        allow: false,
+        reason: `quote amount ${JSON.stringify(requirements.amount)} is not a USDC atomic amount; refusing to sign`,
+      };
+    }
     const evaluation = services.engine.validate({
       mandate,
-      counterparty: new URL(input.url).host,
+      counterparty,
       payTo: typeof requirements.payTo === "string" ? requirements.payTo : "",
       amount,
       quoteAmount: amount,
@@ -172,6 +206,7 @@ export async function handleBuy(
     body: input.body,
     network: network.network,
     signer,
+    allowPrivateHosts: allowPrivateHosts(),
     authorize,
   });
 
@@ -197,7 +232,7 @@ export async function handleBuy(
   }
 
   const quote = result.requirements ?? {};
-  const amount = quotedAmount(quote);
+  const amount = parseQuotedAmount(quote) ?? recordableAmount(quote);
   const segments = buildSegments({
     intent,
     mandateId: mandate.id,
@@ -245,14 +280,26 @@ export async function handleBuy(
 }
 
 /**
- * The amount a requirement asks for, as a USDC decimal string.
+ * The amount a requirement asks for, as a USDC decimal string, or `null` when
+ * the field is not an atomic-unit integer.
  *
- * Under the `exact` scheme the amount charged is the amount quoted, so one
- * value serves for both. `upto` is a ceiling rather than a price and would need
- * the settled figure, which is not wired up.
+ * Under the `exact` scheme the amount charged is the amount quoted, so one value
+ * serves for both. `upto` is a ceiling rather than a price and would need the
+ * settled figure, which is not wired up.
  */
-function quotedAmount(requirements: PaymentRequirements): string {
+function parseQuotedAmount(requirements: PaymentRequirements): string | null {
   const atomic = requirements.amount;
-  if (typeof atomic !== "string" || !/^\d+$/.test(atomic)) return "0";
+  if (typeof atomic !== "string" || !/^\d+$/.test(atomic)) return null;
   return fromUnits(BigInt(atomic));
+}
+
+/**
+ * A best-effort amount for recording only. A denial has to be written down even
+ * when the quote could not be read, so this never refuses; it is never used to
+ * decide whether a payment may proceed.
+ */
+function recordableAmount(requirements: PaymentRequirements): string {
+  const parsed = parseQuotedAmount(requirements);
+  if (parsed !== null) return parsed;
+  return typeof requirements.amount === "string" ? requirements.amount : "0";
 }

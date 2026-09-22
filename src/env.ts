@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import type { Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 /**
  * Load `.env` from the current working directory into process.env.
@@ -35,4 +37,48 @@ export function getPrivateKey(): string | undefined {
  */
 export function getSigningKey(): string | undefined {
   return process.env.LEDGEROOT_SIGNING_KEY ?? (isDryRun() ? DRY_RUN_PRIVATE_KEY : undefined);
+}
+
+/**
+ * The addresses whose mandate signatures this machine will accept on import.
+ *
+ * `LEDGEROOT_TRUSTED_ISSUERS` (comma-separated) takes precedence when set. With
+ * it unset the local signer is trusted, because the key that issues a mandate is
+ * also the one that authorizes the spend. Without any key and no configured
+ * list the result is empty, which refuses every import — a missing trust anchor
+ * has to fail closed, or "signed by anyone" reads the same as "signed by the
+ * user".
+ */
+export function getTrustedIssuers(): string[] {
+  const configured = process.env.LEDGEROOT_TRUSTED_ISSUERS;
+  if (configured !== undefined && configured.trim() !== "") {
+    return configured
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  const key = getPrivateKey();
+  if (!key) return [];
+  try {
+    return [privateKeyToAccount(key as Hex).address.toLowerCase()];
+  } catch {
+    return [];
+  }
+}
+
+/** True when `issuer` is one of the addresses `getTrustedIssuers` names. */
+export function isTrustedIssuer(issuer: string): boolean {
+  return getTrustedIssuers().includes(issuer.toLowerCase());
+}
+
+/**
+ * Whether `buy` may fetch private, loopback or link-local addresses.
+ *
+ * Off by default: an agent that can be talked into a URL must not be able to
+ * reach the machine's own services or a cloud metadata endpoint. Local demos
+ * and tests opt in explicitly.
+ */
+export function allowPrivateHosts(): boolean {
+  const value = process.env.LEDGEROOT_ALLOW_PRIVATE_HOSTS;
+  return value === "true" || value === "1";
 }

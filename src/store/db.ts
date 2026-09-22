@@ -287,12 +287,20 @@ export class LedgerootStore {
     return rows.map((r) => JSON.parse(r.receipt_json) as Receipt);
   }
 
+  /**
+   * Insert a mandate, or update the stored bytes of one that already exists.
+   *
+   * `revoked` is deliberately left alone on conflict. Revocation is a local
+   * decision that must be monotonic: if re-importing (or re-signing) a mandate
+   * reset it, the kill switch would be undone by the very agent it was meant to
+   * stop, simply by presenting the same signed authorization again.
+   */
   upsertMandate(mandate: Mandate): void {
     this.db
       .prepare(
         `INSERT INTO mandates (id, mandate_json, imported_at)
          VALUES (@id, @json, @at)
-         ON CONFLICT(id) DO UPDATE SET mandate_json = excluded.mandate_json, revoked = 0`,
+         ON CONFLICT(id) DO UPDATE SET mandate_json = excluded.mandate_json`,
       )
       .run({ id: mandate.id, json: JSON.stringify(mandate), at: Date.now() });
   }
