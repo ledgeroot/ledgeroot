@@ -280,10 +280,10 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | **热路径未加索引** | 全库没有一个 `CREATE INDEX`：单笔支付有 4 次未索引全表扫描，其中两次还会 `JSON.parse` 整个匹配集。单笔 O(n)，一个月 O(n²) |
 | **单进程、单租户** | 一个库、一把签名钥、一把付款钥。数据模型里没有租户边界——`agentId` / `mandateId` 不是隔离键 |
 | **测试网锚定不产生证据价值** | 测试网的区块时间不是外部权威。主网或补 RFC 3161 合格时间戳是后续动作 |
-| **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](../mandatekey) 的证据包里 |
+| **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](https://github.com/ledgeroot/mandatekey) 的证据包里 |
 | **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
-| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、100 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
+| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、106 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
 | **没有聚合层** | 全库没有一处 SQL 聚合（无 `GROUP BY` / `SUM` / `COUNT`），也没有对账导出。这是生态位里唯一能收费的那一层，目前**完全不存在** |
 | **ERC-8004 只埋了字段** | `Mandate.agentId` 存在但未接注册表校验 |
 
@@ -354,7 +354,7 @@ contracts/       LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/          Monad testnet 部署配置
 docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方向
 assets/          字标（亮 / 暗两版）
-test/            12 个文件、100 个测试
+test/            12 个文件、106 个测试
 ```
 
 ---

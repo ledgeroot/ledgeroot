@@ -280,10 +280,10 @@ The honest section. These are limits of the **current implementation**, not a re
 | **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
 | **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
 | **Testnet anchoring produces no evidentiary value** | A testnet block time is not an external authority. Mainnet, or an RFC 3161 qualified timestamp, is the follow-up |
-| **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](../mandatekey) evidence bundle |
+| **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
 | **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
 | **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
-| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 100 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
+| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 106 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
 | **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
 | **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
 
@@ -354,7 +354,7 @@ contracts/       LedgerootAnchor (Solidity 0.8.24 + Foundry)
 deploy/          Monad testnet deployment config
 docs/            architecture review / roadmap / competitor and standards research / commercialization
 assets/          logo lockups (light + dark)
-test/            100 tests across 12 files
+test/            106 tests across 12 files
 ```
 
 ---
