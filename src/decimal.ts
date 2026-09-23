@@ -32,14 +32,6 @@ export function gt(a: string, b: string): boolean {
   return toUnits(a) > toUnits(b);
 }
 
-export function gte(a: string, b: string): boolean {
-  return toUnits(a) >= toUnits(b);
-}
-
 export function add(a: string, b: string): string {
   return fromUnits(toUnits(a) + toUnits(b));
-}
-
-export function sub(a: string, b: string): string {
-  return fromUnits(toUnits(a) - toUnits(b));
 }

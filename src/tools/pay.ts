@@ -145,11 +145,21 @@ export async function handlePay(
   }
 
   const prevHash = services.store.lastReceipt()?.receiptHash;
-  const mandate = services.store.getMandate(input.mandateId);
 
-  if (!mandate) {
-    const reason = `unknown mandate "${input.mandateId}"`;
+  // Every denial is recorded the same way — only the reason and how much of the
+  // mandate is known yet differ — so the receipt shape lives in one place
+  // instead of being repeated at each refusal.
+  const recordDenial = (
+    reason: string,
+    covering: {
+      agentId?: string;
+      issuer?: string;
+      policyResults?: ReceiptSegments["call"]["policyResults"];
+      policyIntersection?: string[];
+    } = {},
+  ): PayResult => {
     const receipt = buildReceipt({
+      agentId: covering.agentId,
       mandateId: input.mandateId,
       requestId: input.requestId,
       taskId: input.taskId,
@@ -158,11 +168,23 @@ export async function handlePay(
       amount: input.amount,
       status: "denied",
       reason,
-      segments: buildSegments(input, quoteHash, [], "", []),
+      segments: buildSegments(
+        input,
+        quoteHash,
+        covering.policyResults ?? [],
+        covering.issuer ?? "",
+        covering.policyIntersection ?? [],
+      ),
       prevHash,
     });
     record(services, receipt);
     return { status: "denied", receiptId: receipt.id, reason };
+  };
+
+  const mandate = services.store.getMandate(input.mandateId);
+
+  if (!mandate) {
+    return recordDenial(`unknown mandate "${input.mandateId}"`);
   }
 
   const policyIntersection = computePolicyIntersection(
@@ -171,22 +193,11 @@ export async function handlePay(
   );
 
   if (mandate.expiresAt <= Math.floor(Date.now() / 1000)) {
-    const reason = `mandate "${mandate.id}" expired at ${mandate.expiresAt}`;
-    const receipt = buildReceipt({
+    return recordDenial(`mandate "${mandate.id}" expired at ${mandate.expiresAt}`, {
       agentId: mandate.agentId,
-      mandateId: mandate.id,
-      requestId: input.requestId,
-      taskId: input.taskId,
-      counterparty: input.counterparty,
-      endpoint: input.endpoint,
-      amount: input.amount,
-      status: "denied",
-      reason,
-      segments: buildSegments(input, quoteHash, [], mandate.issuer, policyIntersection),
-      prevHash,
+      issuer: mandate.issuer,
+      policyIntersection,
     });
-    record(services, receipt);
-    return { status: "denied", receiptId: receipt.id, reason };
   }
 
   const evaluation = services.engine.validate({
@@ -207,22 +218,12 @@ export async function handlePay(
   }));
 
   if (!evaluation.decision.allow) {
-    const reason = evaluation.decision.reason;
-    const receipt = buildReceipt({
+    return recordDenial(evaluation.decision.reason, {
       agentId: mandate.agentId,
-      mandateId: mandate.id,
-      requestId: input.requestId,
-      taskId: input.taskId,
-      counterparty: input.counterparty,
-      endpoint: input.endpoint,
-      amount: input.amount,
-      status: "denied",
-      reason,
-      segments: buildSegments(input, quoteHash, policyResults, mandate.issuer, policyIntersection),
-      prevHash,
+      issuer: mandate.issuer,
+      policyResults,
+      policyIntersection,
     });
-    record(services, receipt);
-    return { status: "denied", receiptId: receipt.id, reason };
   }
 
   const x402: X402Quote = {
@@ -256,22 +257,15 @@ export async function handlePay(
       amount: input.amount,
     })
   ) {
-    const reason = `request "${input.requestId}" has a payment attempt whose outcome was never recorded; refusing to pay again`;
-    const receipt = buildReceipt({
-      agentId: mandate.agentId,
-      mandateId: mandate.id,
-      requestId: input.requestId,
-      taskId: input.taskId,
-      counterparty: input.counterparty,
-      endpoint: input.endpoint,
-      amount: input.amount,
-      status: "denied",
-      reason,
-      segments: buildSegments(input, quoteHash, policyResults, mandate.issuer, policyIntersection),
-      prevHash,
-    });
-    record(services, receipt);
-    return { status: "denied", receiptId: receipt.id, reason };
+    return recordDenial(
+      `request "${input.requestId}" has a payment attempt whose outcome was never recorded; refusing to pay again`,
+      {
+        agentId: mandate.agentId,
+        issuer: mandate.issuer,
+        policyResults,
+        policyIntersection,
+      },
+    );
   }
 
   const payment = await services.payments.pay(x402);
