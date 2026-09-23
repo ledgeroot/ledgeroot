@@ -188,7 +188,7 @@ Ledgeroot's three layers map one-to-one onto the three runtime safeguards in MAS
 
 - **Any MCP host** — Claude Code, opencode, and anything else that speaks MCP (this is the only integration surface we maintain).
 - **x402 gateways** — including those discoverable through Coinbase's Bazaar.
-- **Monad today** — testnet (chainId 10143) by default, with mainnet (143) wired for buying and settlement checks; the x402 facilitator is `x402-facilitator.molandak.org`. Other chains are a config instance away, not a rewrite; see [Known limits](#known-limits).
+- **Monad today** — testnet (chainId 10143) by default, with mainnet (143) wired for buying, settlement checks and anchoring; the x402 facilitator is `x402-facilitator.molandak.org`. Other chains are a config instance away, not a rewrite; see [Known limits](#known-limits).
 - **AP2-style mandates** — import an externally signed authorization and intersect it with local policy.
 
 ---
@@ -309,11 +309,11 @@ The honest section. These are limits of the **current implementation**, not a re
 | Limit | Current state |
 |---|---|
 | **The pay path is still testnet-only** | `X402_NETWORKS` holds two instances (Monad testnet 10143, mainnet 143) and `ledgeroot_buy` chooses between them by `chainId`. **`ledgeroot_pay` does not**: `bootstrap.ts` still hands the facilitator `MONAD_TESTNET_X402` unconditionally, with no environment variable able to move it |
-| **Mainnet anchoring has no contract** | `LEDGEROOT_CHAIN_ID=143` aims the anchorer at Monad mainnet, but no `LedgerootAnchor` is deployed there, so a mainnet anchor has nowhere to land. Buying and `--check-chain` on mainnet work today; anchoring does not |
+| **Block time is not a qualified time source** | Anchoring now runs on Monad mainnet (`0xca08c795357ae8bcee8af592c827d419750fdf84`), an improvement on the earlier testnet contract — but a block timestamp is still not an external authority. An RFC 3161 qualified timestamp remains the follow-up |
 | **MPP is a seam, not an implementation** | `segments.tx.protocol` is an explicit dimension: **an unknown protocol reports `incomplete`** — neither waved through nor wrongly accused. But MPP's field-level shape is undecided, so no payload shape is assumed and no provider exists. Tracked as the top item in the [roadmap](./docs/roadmap.md) |
 | **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
 | **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
-| **Testnet anchoring produces no evidentiary value** | A testnet block time is not an external authority. Mainnet, or an RFC 3161 qualified timestamp, is the follow-up |
+| **Testnet anchoring has no evidentiary value** | A testnet deployment still exists (`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`) and produces no evidence; the live anchor contract is the mainnet one above |
 | **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
 | **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
 | **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |

@@ -3,16 +3,21 @@ import { createPublicClient, createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { pathToFileURL } from "node:url";
 import { loadEnv } from "../src/env.js";
-import { DEFAULT_RPC_URL, monadTestnet } from "../src/chains.js";
+import { anchorChain, defaultRpcUrls } from "../src/chains.js";
 import { anchorAbi } from "../src/anchor/anchorer.js";
 
 loadEnv();
 
-/** Monad testnet deployment configuration. */
+const chain = anchorChain();
+
+/**
+ * Deployment configuration for the chain `LEDGEROOT_CHAIN_ID` selects — Monad
+ * testnet by default, mainnet when set to 143 — with its matching RPC.
+ */
 export const monad = {
-  name: "monad",
-  chain: monadTestnet,
-  rpcUrl: process.env.LEDGEROOT_RPC_URL ?? DEFAULT_RPC_URL,
+  name: chain.name,
+  chain,
+  rpcUrl: defaultRpcUrls()[chain.id],
   anchorContract: (process.env.LEDGEROOT_ANCHOR_ADDRESS ?? "") as Hex,
   anchorAbi,
 };
@@ -49,7 +54,7 @@ export async function deployAnchor(bytecode: Hex, owner: Hex): Promise<Hex> {
   const account = privateKeyToAccount(privateKeyFromEnv("LEDGEROOT_DEPLOYER_PRIVATE_KEY"));
   const wallet = createWalletClient({
     account,
-    chain: monadTestnet,
+    chain: monad.chain,
     transport: http(monad.rpcUrl),
   });
   const hash = await wallet.deployContract({ abi: monad.anchorAbi, bytecode, args: [owner] });
@@ -57,7 +62,7 @@ export async function deployAnchor(bytecode: Hex, owner: Hex): Promise<Hex> {
   // once the receipt lands. Returning the hash here printed a 32-byte value
   // where the caller expects a contract address.
   const receipt = await createPublicClient({
-    chain: monadTestnet,
+    chain: monad.chain,
     transport: http(monad.rpcUrl),
   }).waitForTransactionReceipt({ hash });
   if (!receipt.contractAddress) {

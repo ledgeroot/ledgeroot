@@ -188,7 +188,7 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 
 - **任意 MCP 宿主** —— Claude Code、opencode，以及任何说 MCP 的宿主（这是我们唯一维护的集成面）。
 - **x402 网关** —— 包括已上 Coinbase Bazaar 的那些。
-- **目前是 Monad** —— 默认 testnet（chainId 10143），主网（143）已接通购买与结算校验；facilitator 为 `x402-facilitator.molandak.org`。换链是补一个配置实例，不是重写；见[已知边界](#已知边界)。
+- **目前是 Monad** —— 默认 testnet（chainId 10143），主网（143）已接通购买、结算校验与锚定；facilitator 为 `x402-facilitator.molandak.org`。换链是补一个配置实例，不是重写；见[已知边界](#已知边界)。
 - **AP2 风格授权令** —— 可导入外部签名授权，并与本地策略取交集。
 
 ---
@@ -309,11 +309,11 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | 边界 | 现状 |
 |---|---|
 | **支付路径仍然只支持测试网** | `X402_NETWORKS` 现在有两个实例（Monad 测试网 10143、主网 143），`ledgeroot_buy` 按 `chainId` 二选一。**`ledgeroot_pay` 没有**：`bootstrap.ts` 仍然无条件把 `MONAD_TESTNET_X402` 交给 facilitator，也没有环境变量能改 |
-| **主网锚定还没有合约** | `LEDGEROOT_CHAIN_ID=143` 可把锚定器指向 Monad 主网，但主网上还没部署 `LedgerootAnchor`，主网锚定无处落笔。主网购买与 `--check-chain` 现在可用；锚定尚不可用 |
+| **区块时间不是合格时间源** | 锚定已跑在 Monad 主网（`0xca08c795357ae8bcee8af592c827d419750fdf84`），比之前的测试网合约进了一步，但区块时间戳仍不是外部权威；后续仍是 RFC 3161 合格时间戳 |
 | **MPP 只有接缝，没有实现** | `segments.tx.protocol` 是显式维度：**未知协议报 `incomplete`，不放行也不冤枉**。但 MPP 的字段级形状未定，所以没有预设载荷，也没有 provider。**这是 [roadmap.md](./docs/roadmap.md) 里排在第一位的待补项** |
 | **热路径未加索引** | 全库没有一个 `CREATE INDEX`：单笔支付有 4 次未索引全表扫描，其中两次还会 `JSON.parse` 整个匹配集。单笔 O(n)，一个月 O(n²) |
 | **单进程、单租户** | 一个库、一把签名钥、一把付款钥。数据模型里没有租户边界——`agentId` / `mandateId` 不是隔离键 |
-| **测试网锚定不产生证据价值** | 测试网的区块时间不是外部权威。主网或补 RFC 3161 合格时间戳是后续动作 |
+| **测试网锚定无证据价值** | 测试网部署仍在（`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`），不产生证据；线上锚定合约是上面那个主网合约 |
 | **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](https://github.com/ledgeroot/mandatekey) 的证据包里 |
 | **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
