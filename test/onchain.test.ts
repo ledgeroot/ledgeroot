@@ -7,7 +7,7 @@ import {
 } from "../src/verify/onchain.js";
 import { buildReceipt } from "../src/receipt/builder.js";
 import { toUnits } from "../src/decimal.js";
-import { MONAD_TESTNET_X402 } from "../src/x402/facilitator.js";
+import { MONAD_MAINNET_X402, MONAD_TESTNET_X402 } from "../src/x402/facilitator.js";
 import { testSegments } from "./support.js";
 import type { Receipt, ReceiptSegments } from "../src/types.js";
 
@@ -55,6 +55,20 @@ const has = (issues: { kind: string; message: string }[], pattern: RegExp) =>
 describe("checkSettlement", () => {
   it("accepts a settlement the chain agrees with", async () => {
     expect(await checkSettlement(paidReceipt(), reader(authorized()))).toEqual([]);
+  });
+
+  it("checks a mainnet settlement against the mainnet USDC contract", async () => {
+    const segments = testSegments({ amount: "0.1", payTo: PAY_TO, endpoint: "/search" });
+    segments.tx = { txHash: TX, chainId: MONAD_MAINNET_X402.chainId, payer: PAYER };
+    const receipt = buildReceipt({ status: "paid", amount: "0.1", segments });
+    const settlement: OnChainSettlement = {
+      to: MONAD_MAINNET_X402.usdcAddress,
+      success: true,
+      authorization: { from: PAYER, to: PAY_TO, value: toUnits("0.1") },
+    };
+    // Chain 143 must be a settlement chain this build knows, or the check would
+    // short-circuit to `incomplete` and the assertion below would not be empty.
+    expect(await checkSettlement(receipt, reader(settlement))).toEqual([]);
   });
 
   it("rejects a transaction the chain does not have", async () => {

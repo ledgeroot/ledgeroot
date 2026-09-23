@@ -10,7 +10,7 @@ import {
 } from "./x402/facilitator.js";
 import { getPrivateKey, isDryRun } from "./env.js";
 import { Anchorer } from "./anchor/anchorer.js";
-import { DEFAULT_RPC_URL, monadTestnet } from "./chains.js";
+import { anchorChain, defaultRpcUrls } from "./chains.js";
 import type { LedgerootServices } from "./context.js";
 
 export interface BootstrapOptions {
@@ -38,10 +38,11 @@ export function createServices(options: BootstrapOptions = {}): LedgerootService
       });
 
   const anchorAddress = process.env.LEDGEROOT_ANCHOR_ADDRESS;
+  const chain = anchorChain();
   const anchorer = anchorAddress
     ? new Anchorer({
-        chain: monadTestnet,
-        rpcUrl: process.env.LEDGEROOT_RPC_URL ?? DEFAULT_RPC_URL,
+        chain,
+        rpcUrl: defaultRpcUrls()[chain.id],
         contractAddress: anchorAddress as Hex,
         privateKey,
       })

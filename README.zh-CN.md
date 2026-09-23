@@ -188,7 +188,7 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 
 - **任意 MCP 宿主** —— Claude Code、opencode，以及任何说 MCP 的宿主（这是我们唯一维护的集成面）。
 - **x402 网关** —— 包括已上 Coinbase Bazaar 的那些。
-- **目前是 Monad testnet** —— chainId 10143，facilitator 为 `x402-facilitator.molandak.org`。换链是补一个配置实例，不是重写；见[已知边界](#已知边界)。
+- **目前是 Monad** —— 默认 testnet（chainId 10143），主网（143）已接通购买与结算校验；facilitator 为 `x402-facilitator.molandak.org`。换链是补一个配置实例，不是重写；见[已知边界](#已知边界)。
 - **AP2 风格授权令** —— 可导入外部签名授权，并与本地策略取交集。
 
 ---
@@ -309,7 +309,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | 边界 | 现状 |
 |---|---|
 | **支付路径仍然只支持测试网** | `X402_NETWORKS` 现在有两个实例（Monad 测试网 10143、主网 143），`ledgeroot_buy` 按 `chainId` 二选一。**`ledgeroot_pay` 没有**：`bootstrap.ts` 仍然无条件把 `MONAD_TESTNET_X402` 交给 facilitator，也没有环境变量能改 |
-| **主网采购还无法做链上核对** | `USDC_BY_CHAIN` 只认得 Monad 测试网的 USDC，所以对主网收据跑 `--check-chain` 会报 `incomplete`。缺的是**按链配置 RPC**——刻意留空而不是给默认值：拿一个 RPC 去问另一条链的交易，会报出**假的 `tampered`** |
+| **主网锚定还没有合约** | `LEDGEROOT_CHAIN_ID=143` 可把锚定器指向 Monad 主网，但主网上还没部署 `LedgerootAnchor`，主网锚定无处落笔。主网购买与 `--check-chain` 现在可用；锚定尚不可用 |
 | **MPP 只有接缝，没有实现** | `segments.tx.protocol` 是显式维度：**未知协议报 `incomplete`，不放行也不冤枉**。但 MPP 的字段级形状未定，所以没有预设载荷，也没有 provider。**这是 [roadmap.md](./docs/roadmap.md) 里排在第一位的待补项** |
 | **热路径未加索引** | 全库没有一个 `CREATE INDEX`：单笔支付有 4 次未索引全表扫描，其中两次还会 `JSON.parse` 整个匹配集。单笔 O(n)，一个月 O(n²) |
 | **单进程、单租户** | 一个库、一把签名钥、一把付款钥。数据模型里没有租户边界——`agentId` / `mandateId` 不是隔离键 |
@@ -317,7 +317,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](https://github.com/ledgeroot/mandatekey) 的证据包里 |
 | **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
-| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、114 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
+| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、128 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
 | **没有聚合层** | 全库没有一处 SQL 聚合（无 `GROUP BY` / `SUM` / `COUNT`），也没有对账导出。这是生态位里唯一能收费的那一层，目前**完全不存在** |
 | **ERC-8004 只埋了字段** | `Mandate.agentId` 存在但未接注册表校验 |
 
@@ -361,6 +361,8 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | `LEDGEROOT_SIGNING_KEY` | **收据签名**密钥（32 字节 hex 种子）。与支付密钥刻意分离。**未设置则收据不签名，验证报 `incomplete`** |
 | `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator 地址（默认 `https://x402-facilitator.molandak.org`，公开、无需 API key） |
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC（默认 `https://testnet-rpc.monad.xyz`） |
+| `LEDGEROOT_MAINNET_RPC_URL` | Monad 主网 RPC，验证落在 143 链上的收据时使用（默认 `https://rpc.monad.xyz`） |
+| `LEDGEROOT_CHAIN_ID` | 锚定器目标链：`10143` 测试网（默认）或 `143` 主网 |
 | `LEDGEROOT_ANCHOR_ADDRESS` | 锚定合约地址（未设置则无法锚定） |
 | `LEDGEROOT_DEPLOYER_PRIVATE_KEY` | 仅 `deploy/monad.ts` 使用；合约 owner 由 `LEDGEROOT_PRIVATE_KEY` 推导 |
 | `LEDGEROOT_ANCHOR_BYTECODE` | 部署用字节码；不设则读 `forge build` 产物 |
@@ -384,12 +386,12 @@ src/
   decimal.ts     USDC 六位小数 bigint 运算，无浮点
   env.ts         环境加载 + dry-run 开关
   cli.ts         verify / export / anchor / jwks / serve
-scripts/         demo（dry-run 全流程）/ pay-demo（真实支付）/ deploy
+scripts/         demo（dry-run 全流程）/ pay-demo（真实支付）/ buy-demo（真实 x402 购买）/ deploy
 contracts/       LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/          Monad testnet 部署配置
 docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方向
 assets/          字标（亮 / 暗两版）
-test/            13 个文件、114 个测试
+test/            15 个文件、128 个测试
 ```
 
 ---

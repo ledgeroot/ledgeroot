@@ -2,7 +2,7 @@ import { createPublicClient, decodeFunctionData, http, parseAbi, type Hex } from
 import type { Receipt } from "../types.js";
 import { SETTLEMENT_PROTOCOL_X402 } from "../types.js";
 import { fromUnits, toUnits } from "../decimal.js";
-import { MONAD_TESTNET_X402 } from "../x402/facilitator.js";
+import { MONAD_MAINNET_X402, MONAD_TESTNET_X402 } from "../x402/facilitator.js";
 import { incomplete, tampered, type Issue } from "./verifier.js";
 
 const transferWithAuthorizationAbi = parseAbi([
@@ -22,15 +22,20 @@ export interface OnChainSettlement {
 }
 
 /**
- * Resolves a settlement transaction. Returns null when the chain has no such
- * transaction; throws when the chain could not be reached, so an unreachable
- * node is reported as missing evidence rather than as a missing transaction.
+ * Resolves a settlement transaction on the chain the receipt names. Returns null
+ * when the chain has no such transaction; throws when the chain could not be
+ * reached, so an unreachable node is reported as missing evidence rather than as
+ * a missing transaction.
  */
-export type SettlementReader = (txHash: string) => Promise<OnChainSettlement | null>;
+export type SettlementReader = (
+  txHash: string,
+  chainId: number,
+) => Promise<OnChainSettlement | null>;
 
 /** USDC contracts Ledgeroot knows how to check settlements against, by chain. */
 const USDC_BY_CHAIN: Record<number, string> = {
   [MONAD_TESTNET_X402.chainId]: MONAD_TESTNET_X402.usdcAddress,
+  [MONAD_MAINNET_X402.chainId]: MONAD_MAINNET_X402.usdcAddress,
 };
 
 function decodeAuthorization(input: Hex): OnChainSettlement["authorization"] {
@@ -43,13 +48,28 @@ function decodeAuthorization(input: Hex): OnChainSettlement["authorization"] {
   }
 }
 
-/** Read settlement transactions from an EVM node over JSON-RPC. */
-export function createSettlementReader(rpcUrl: string): SettlementReader {
-  const client = createPublicClient({ transport: http(rpcUrl) });
+/**
+ * Read settlement transactions from an EVM node over JSON-RPC, one client per
+ * chain, created on first use.
+ *
+ * The reader is keyed by chain because a ledger can hold receipts from more than
+ * one: the same `txHash` on a different chain is a different transaction, so the
+ * chain a receipt records has to choose the node rather than a single endpoint
+ * fixed before the run.
+ */
+export function createSettlementReader(rpcUrls: Record<number, string>): SettlementReader {
+  const clients = new Map<number, ReturnType<typeof createPublicClient>>();
 
-  return async (txHash) => {
+  return async (txHash, chainId) => {
     const hash = txHash as Hex;
     try {
+      const rpcUrl = rpcUrls[chainId];
+      if (!rpcUrl) throw new Error(`no RPC configured for chain ${chainId}`);
+      let client = clients.get(chainId);
+      if (!client) {
+        client = createPublicClient({ transport: http(rpcUrl) });
+        clients.set(chainId, client);
+      }
       const [tx, receipt] = await Promise.all([
         client.getTransaction({ hash }),
         client.getTransactionReceipt({ hash }),
@@ -99,7 +119,7 @@ export async function checkSettlement(
 
   let settlement: OnChainSettlement | null;
   try {
-    settlement = await read(txHash);
+    settlement = await read(txHash, chainId);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return [incomplete(`receipt ${receipt.id}: could not read ${txHash} (${reason})`)];

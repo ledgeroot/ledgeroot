@@ -188,7 +188,7 @@ Ledgeroot's three layers map one-to-one onto the three runtime safeguards in MAS
 
 - **Any MCP host** — Claude Code, opencode, and anything else that speaks MCP (this is the only integration surface we maintain).
 - **x402 gateways** — including those discoverable through Coinbase's Bazaar.
-- **Monad testnet today** — chainId 10143, with the x402 facilitator at `x402-facilitator.molandak.org`. Other chains are a config instance away, not a rewrite; see [Known limits](#known-limits).
+- **Monad today** — testnet (chainId 10143) by default, with mainnet (143) wired for buying and settlement checks; the x402 facilitator is `x402-facilitator.molandak.org`. Other chains are a config instance away, not a rewrite; see [Known limits](#known-limits).
 - **AP2-style mandates** — import an externally signed authorization and intersect it with local policy.
 
 ---
@@ -309,7 +309,7 @@ The honest section. These are limits of the **current implementation**, not a re
 | Limit | Current state |
 |---|---|
 | **The pay path is still testnet-only** | `X402_NETWORKS` holds two instances (Monad testnet 10143, mainnet 143) and `ledgeroot_buy` chooses between them by `chainId`. **`ledgeroot_pay` does not**: `bootstrap.ts` still hands the facilitator `MONAD_TESTNET_X402` unconditionally, with no environment variable able to move it |
-| **A mainnet purchase cannot be chain-checked yet** | `USDC_BY_CHAIN` knows Monad testnet's USDC only, so `--check-chain` on a mainnet receipt reports `incomplete`. The missing piece is per-chain RPC configuration, deliberately absent rather than defaulted: one RPC URL asked about another chain's transaction would report a false `tampered` |
+| **Mainnet anchoring has no contract** | `LEDGEROOT_CHAIN_ID=143` aims the anchorer at Monad mainnet, but no `LedgerootAnchor` is deployed there, so a mainnet anchor has nowhere to land. Buying and `--check-chain` on mainnet work today; anchoring does not |
 | **MPP is a seam, not an implementation** | `segments.tx.protocol` is an explicit dimension: **an unknown protocol reports `incomplete`** — neither waved through nor wrongly accused. But MPP's field-level shape is undecided, so no payload shape is assumed and no provider exists. Tracked as the top item in the [roadmap](./docs/roadmap.md) |
 | **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
 | **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
@@ -317,7 +317,7 @@ The honest section. These are limits of the **current implementation**, not a re
 | **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
 | **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
 | **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
-| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 114 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
+| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 128 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
 | **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
 | **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
 
@@ -361,6 +361,8 @@ The honest section. These are limits of the **current implementation**, not a re
 | `LEDGEROOT_SIGNING_KEY` | The **receipt signing** key (32-byte hex seed), deliberately separate from the payment key. **If unset, receipts are unsigned and verification reports `incomplete`** |
 | `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator endpoint (defaults to `https://x402-facilitator.molandak.org` — public, no API key) |
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC (defaults to `https://testnet-rpc.monad.xyz`) |
+| `LEDGEROOT_MAINNET_RPC_URL` | Monad mainnet RPC, used when a receipt settled on chain 143 (defaults to `https://rpc.monad.xyz`) |
+| `LEDGEROOT_CHAIN_ID` | Chain the anchorer targets: `10143` testnet (default) or `143` mainnet |
 | `LEDGEROOT_ANCHOR_ADDRESS` | Anchor contract address (anchoring is unavailable without it) |
 | `LEDGEROOT_DEPLOYER_PRIVATE_KEY` | Used only by `deploy/monad.ts`; the contract owner derives from `LEDGEROOT_PRIVATE_KEY` |
 | `LEDGEROOT_ANCHOR_BYTECODE` | Bytecode for deployment; falls back to the `forge build` artifact |
@@ -384,12 +386,12 @@ src/
   decimal.ts     USDC six-decimal bigint arithmetic, no floating point
   env.ts         environment loading + the dry-run switch
   cli.ts         verify / export / anchor / jwks / serve
-scripts/         demo (dry-run, full loop) / pay-demo (real payment) / deploy
+scripts/         demo (dry-run, full loop) / pay-demo (real payment) / buy-demo (real x402 purchase) / deploy
 contracts/       LedgerootAnchor (Solidity 0.8.24 + Foundry)
 deploy/          Monad testnet deployment config
 docs/            architecture review / roadmap / competitor and standards research / commercialization
 assets/          logo lockups (light + dark)
-test/            114 tests across 13 files
+test/            128 tests across 15 files
 ```
 
 ---

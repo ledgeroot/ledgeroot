@@ -3,7 +3,7 @@ import type { LedgerootServices } from "../context.js";
 import type { PublicKey, Receipt } from "../types.js";
 import { epochRoot } from "../anchor/anchorer.js";
 import { merkleProof } from "../anchor/merkle.js";
-import { DEFAULT_RPC_URL } from "../chains.js";
+import { defaultRpcUrls } from "../chains.js";
 import { getSigningKey } from "../env.js";
 import { jwksOf, publicKeyOf } from "../receipt/signing.js";
 import { checkSettlements, createSettlementReader } from "../verify/onchain.js";
@@ -102,11 +102,14 @@ export function verify(services: LedgerootServices) {
  * against an EVM node. The chain pass is opt-in: the offline verification is
  * the guarantee, and it must keep working with no network at all.
  */
-export async function verifyOnChain(services: LedgerootServices, rpcUrl?: string) {
+export async function verifyOnChain(
+  services: LedgerootServices,
+  rpcUrls: Record<number, string> = defaultRpcUrls(),
+) {
   const offline = verify(services);
   const chainIssues = await checkSettlements(
     services.store.listReceipts(),
-    createSettlementReader(rpcUrl ?? process.env.LEDGEROOT_RPC_URL ?? DEFAULT_RPC_URL),
+    createSettlementReader(rpcUrls),
   );
   const issues = [...offline.issues, ...chainIssues];
   return { ...offline, status: classify(issues), issues };
