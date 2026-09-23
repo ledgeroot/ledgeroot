@@ -68,8 +68,8 @@
 | 锚定合约 | `contracts/src/LedgerootAnchor.sol` | ✅ |
 | x402 buyer（策略关口在签名边界）+ facilitator | `src/x402/{buyer,facilitator}.ts` | ✅ |
 | CLI（verify / export / anchor / buy / jwks / serve） | `src/cli.ts` | ✅ |
-| 测试 15 文件 / 128 用例 + Solidity 测试 | `test/`, `contracts/test/` | ✅ |
-| npm 发布 | `package.json`（`v0.7.0`） | ✅ 已发布 |
+| 测试 15 文件 / 129 用例 + Solidity 测试 | `test/`, `contracts/test/` | ✅ |
+| npm 发布 | `package.json`（`v0.8.0`） | ⏳ 待发布（上一版 `v0.7.0`） |
 
 ### 2.2 正确性缺陷（源码级，P0）—— ✅ 8/8 已修
 
@@ -325,7 +325,7 @@ Vaara 已做到**且更彻底**（自托管 + 无 SaaS + 断网单文件验证 +
 
 | # | 决策 | 影响 | 状态 |
 |---|---|---|---|
-| **Q1** | P0-1 的 Merkle 变更是破坏性的——是否保留向后兼容？ | 决定 schema 版本升级与迁移路径 | ✅ **已答：采用破坏性升级。** 版本号已定：`0.7.0` |
+| **Q1** | P0-1 的 Merkle 变更是破坏性的——是否保留向后兼容？ | 决定 schema 版本升级与迁移路径 | ✅ **已答：采用破坏性升级。** 版本号：`0.8.0` |
 | **Q2** | 签名密钥与锚定密钥是否分离？ | 安全边界 | ✅ **已答**：`LEDGEROOT_SIGNING_KEY` 独立且不回落；锚定 owner 取锚定钱包 |
 | **Q3** | 独立验证器包放本仓库 monorepo 还是独立仓库？ | 分发与版本节奏 | 待定 |
 | **Q4** | facilitator 多路化的目标链优先级？（Base / Solana / BNB） | 工作量与生态契合度 | 待定 |

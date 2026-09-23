@@ -1,7 +1,7 @@
 # 架构评估
 
 > 定位：对当前源码的工程评估——已做对的、规模层面的债、架构张力、链配置与协议接缝
-> 状态：2026-09-22（对照 `v0.7.0` 源码复核）
+> 状态：2026-09-23（对照 `v0.8.0` 源码复核）
 > 关联：[roadmap.md](./roadmap.md)（计划） · [commercialization.md](./commercialization.md)（生态位） · [standards.md](./standards.md)（协议层） · [competitors.md](./competitors.md)
 > 评估方法：源码通读（`ledgeroot/src/**`、`mandatekey/app/api/**` 与组件、`contracts/src/LedgerootAnchor.sol`）+ 关键路径逐行复核
 
@@ -187,7 +187,7 @@
 
 **每笔支付的账**：4 次全表扫（2 次带全量 `JSON.parse`）+ 1 × SHA-256 + 1 × Ed25519 + 1 × secp256k1 签名 + 2 次串行网络往返 + 1 次 fsync。**其中只有第 7 步是协议固有的，其余都可以修掉。**
 
-**当前测试**：`npm test` = **14 文件 / 123 用例**；`typecheck`、`build` 均通过（`v0.7.0`）。
+**当前测试**：`npm test` = **15 文件 / 129 用例**；`typecheck`、`build` 均通过（`v0.8.0`）。
 
 ---
 
