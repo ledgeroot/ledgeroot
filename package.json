@@ -1,6 +1,6 @@
 {
   "name": "ledgeroot",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "MCP payment plugin and evidence engine for agent x402 payments. Every agent payment, on the record.",
   "license": "MIT",
   "repository": {
