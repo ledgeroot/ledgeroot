@@ -79,7 +79,8 @@ export class LedgerootStore {
         imported_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS anchors (
-        epoch INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        epoch INTEGER NOT NULL,
         root TEXT NOT NULL,
         tx_hash TEXT,
         receipt_count INTEGER,
@@ -111,9 +112,18 @@ export class LedgerootStore {
    * recompute over the whole ledger and reports a mismatch as soon as one more
    * payment arrives. Rows written before this column existed keep NULL, which
    * verifies as `incomplete` rather than a false `tampered`.
+   *
+   * `anchors.id`: the epoch used to be the primary key, which made the epoch
+   * double as the insertion order — true only while one contract is in use. A
+   * new deployment restarts its counter at 1, so `ORDER BY epoch DESC` kept
+   * returning the previous contract's anchor and verification quietly checked
+   * the ledger against a stale root. Anchors now carry their own sequence and
+   * `epoch` is a plain column: it is the contract's number, not ours, and two
+   * contracts may legitimately both have an epoch 1.
    */
   private migrate(): void {
     if (this.receiptsNeedSeqKey()) this.rebuildReceipts();
+    if (!this.hasColumn("anchors", "id")) this.rebuildAnchors();
     if (!this.hasColumn("anchors", "receipt_count")) {
       this.db.exec("ALTER TABLE anchors ADD COLUMN receipt_count INTEGER");
     }
@@ -176,6 +186,38 @@ export class LedgerootStore {
       );
       this.db.exec("DROP TABLE receipts");
       this.db.exec("ALTER TABLE receipts_migrated RENAME TO receipts");
+    })();
+  }
+
+  /**
+   * Rebuild `anchors` around a sequence of its own.
+   *
+   * Old rows carry no insertion order beyond the primary key they are losing, so
+   * they are copied by `anchored_at` (and then the old rowid, which was the
+   * epoch) to preserve the order in which they were recorded.
+   */
+  private rebuildAnchors(): void {
+    // A database old enough to have the epoch primary key may also predate the
+    // receipt-count boundary, so that column is copied only when it is there.
+    const count = this.hasColumn("anchors", "receipt_count") ? "receipt_count" : "NULL";
+    this.db.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE anchors_migrated (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          epoch INTEGER NOT NULL,
+          root TEXT NOT NULL,
+          tx_hash TEXT,
+          receipt_count INTEGER,
+          anchored_at INTEGER NOT NULL
+        );
+      `);
+      this.db.exec(
+        `INSERT INTO anchors_migrated (epoch, root, tx_hash, receipt_count, anchored_at)
+         SELECT epoch, root, tx_hash, ${count}, anchored_at FROM anchors
+         ORDER BY anchored_at, rowid`,
+      );
+      this.db.exec("DROP TABLE anchors");
+      this.db.exec("ALTER TABLE anchors_migrated RENAME TO anchors");
     })();
   }
 
@@ -370,7 +412,7 @@ export class LedgerootStore {
     receiptCount: number | null;
   } | null {
     const row = this.db
-      .prepare("SELECT epoch, root, tx_hash, receipt_count FROM anchors ORDER BY epoch DESC LIMIT 1")
+      .prepare("SELECT epoch, root, tx_hash, receipt_count FROM anchors ORDER BY id DESC LIMIT 1")
       .get() as
       | { epoch: number; root: string; tx_hash: string | null; receipt_count: number | null }
       | undefined;

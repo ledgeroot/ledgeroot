@@ -97,6 +97,24 @@ describe("anchor flow", () => {
     store.close();
   });
 
+  it("reads the latest anchor by when it was recorded, not by its epoch", () => {
+    const store = new LedgerootStore({ path: DB });
+
+    // A contract anchored to six times, then a new deployment whose counter
+    // restarts at 1. Ordering by epoch would keep returning the old anchor, and
+    // verification would check the ledger against a root the live contract
+    // never saw.
+    store.recordAnchor(6, "aa".repeat(32), "0xold", 4);
+    store.recordAnchor(1, "bb".repeat(32), "0xnew", 5);
+
+    const latest = store.latestAnchor();
+    expect(latest?.root).toBe("bb".repeat(32));
+    expect(latest?.epoch).toBe(1);
+    expect(latest?.txHash).toBe("0xnew");
+    expect(latest?.receiptCount).toBe(5);
+    store.close();
+  });
+
   it("exports an inclusion proof for each receipt the anchor covers", async () => {
     const store = new LedgerootStore({ path: DB });
     const a = denied("first");
