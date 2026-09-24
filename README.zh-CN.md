@@ -321,7 +321,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | **单进程、单租户** | 一个库、一把签名钥、一把付款钥。数据模型里没有租户边界——`agentId` / `mandateId` 不是隔离键 |
 | **测试网锚定无证据价值** | 测试网部署仍在（`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`），不产生证据；线上锚定合约是上面那个主网合约 |
 | **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](https://github.com/ledgeroot/mandatekey) 的证据包里 |
-| **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
+| **尚无独立验证器包** | 证据包里已经带了：[MandateKey](https://github.com/ledgeroot/mandatekey) 导出的 zip 内附 `verify.mjs`，自带 RFC 8785 规范化与 RFC 6962 证明折叠，只 import `node:crypto`，收件方无需安装任何东西。尚未发布的是「在证据包之外单独验证一张收据」的包 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
 | **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、136 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
 | **没有聚合层** | 全库没有一处 SQL 聚合（无 `GROUP BY` / `SUM` / `COUNT`），也没有对账导出。这是生态位里唯一能收费的那一层，目前**完全不存在** |
