@@ -64,14 +64,47 @@ claude mcp add ledgeroot \
   -- npx ledgeroot serve
 ```
 
-之后全程对话：
+先确认服务起来了，再指望工具能跑——`Environment` 显示为空是正常的，值由启动它的 shell 传入：
 
-1. **签发授权**：说「给它授权 5 USDC 买 agent402.tools 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认。
-2. **agent 花钱**：说「帮我调研 X，要买付费数据」→ agent 调 `ledgeroot_pay` → 策略校验 → facilitator 结算 → 六段收据。
-3. **撤销**：说「撤销它的授权」→ `ledgeroot_mandate_revoke`。
-4. **审计**：说「验证证据」→ `ledgeroot_verify`。
+```bash
+claude mcp list     # ledgeroot: node dist/cli.js serve - ✔ Connected
+```
 
-> 自然语言解析由宿主完成。Ledgeroot 只提供结构化、确定性的工具；私钥经 `--env` 传入并留在本机。
+### 怎么用
+
+注册之后全程对话——自然语言解析由宿主完成：
+
+1. **签发授权**——说「给它授权 5 USDC 买 agent402.tools 数据」→ Claude 调 `ledgeroot_mandate_sign` → 你确认。
+2. **让 agent 去买**——说「帮我调研 X，要买付费数据」→ `ledgeroot_buy` 自己取资源，拿**卖家自己发出的那份** 402 报价逐条过策略，全部通过才签名 → 六段收据。
+3. **撤销**——说「撤销它的授权」→ `ledgeroot_mandate_revoke`。下一笔支付被拒**并被记录**。
+4. **审计**——说「验证证据」→ `ledgeroot_verify`；「导出证据」→ `ledgeroot_export`。
+
+> 私钥经 `--env` 传入并留在本机；工具是结构化、确定性的——支付边界上不存在"猜"。
+
+#### 同一条闭环，headless 跑
+
+脚本化演示或 CI 用一条 prompt 就能端到端驱动。授权令会过期，所以先签一张新的——`npm run mandate:demo` 写下的 `demo-mandate-agent` 就是下面这条 prompt 所花的授权令：
+
+```bash
+npm run mandate:demo
+claude -p 'You have the ledgeroot MCP tools available. Buy one call to the agent402.tools hash service through ledgeroot_buy, under mandate demo-mandate-agent. The resource is https://agent402.tools/api/hash, use method POST with body {"text":"mandatekey","algo":"sha256"} and intent "agent research: fingerprint a string". Then call ledgeroot_verify. Report exactly three things: the receipt id, the settlement transaction hash, and the verification status.'
+```
+
+在 Monad 主网上真实跑一次这条 prompt，返回：
+
+| 字段 | 值 |
+|---|---|
+| 收据 id | `30d543f989cad6076026b8ee61d8476a296ff2df1b5527d66f1f8e83a59e6c56` |
+| 结算交易 | `0x5464d7f2080b66cc0d8d254e4549c5a7f142d6060ada1c83f0feb626c0141ba8` |
+| 验证结果 | `verified`——4 张收据，0 issues |
+
+agent 向 `agent402.tools` 结算了 **0.001 USDC**；收据记录 `chainId: 143`，那笔交易是 USDC 合约上的 `transferWithAuthorization`。**别信 agent 的总结，自己去核**——验证器离线重算，`--check-chain` 则直接问链：
+
+```bash
+node dist/cli.js verify --db ./ledgeroot.sqlite --check-chain
+```
+
+> ⚠️ **锚定不是自动的。** 支付路径只负责写收据；把根放上链是独立的显式一步——`ledgeroot anchor`、`ledgeroot_anchor` 工具，或 `anchor --watch`。它刻意不放进支付路径，免得两者共用 nonce。最后锚定之后写的收据只是不在那一期的包含证明里；`verify` 仍会报 `verified`，因为一期锚定覆盖的是它提交时已存在的收据。
 
 ### CLI
 

@@ -64,14 +64,47 @@ claude mcp add ledgeroot \
   -- npx ledgeroot serve
 ```
 
-Then it is all conversation:
+Check the server came up before expecting a tool to run — `Environment` should read as empty because the values arrive from the shell that launched it:
 
-1. **Issue an authorization**: say "authorize it to spend 5 USDC on agent402.tools data" → Claude calls `ledgeroot_mandate_sign` → you confirm.
-2. **The agent spends**: say "research X for me, buy the paid data" → the agent calls `ledgeroot_pay` → policies run → the facilitator settles → six-segment receipt.
-3. **Revoke**: say "revoke its authorization" → `ledgeroot_mandate_revoke`.
-4. **Audit**: say "verify the evidence" → `ledgeroot_verify`.
+```bash
+claude mcp list     # ledgeroot: node dist/cli.js serve - ✔ Connected
+```
 
-> Natural-language parsing is the host's job. Ledgeroot only exposes structured, deterministic tools; the private key is passed via `--env` and stays on the machine.
+### How to use it
+
+Once registered, it is all conversation — natural-language parsing is the host's job:
+
+1. **Issue an authorization** — "authorize it to spend 5 USDC on agent402.tools data" → Claude calls `ledgeroot_mandate_sign` → you confirm.
+2. **Let the agent buy** — "research X for me, buy the paid data" → `ledgeroot_buy` fetches the resource itself, judges the seller's **own** 402 quote against every policy, and signs only if they all pass → six-segment receipt.
+3. **Revoke** — "revoke its authorization" → `ledgeroot_mandate_revoke`. The next payment is denied **and recorded**.
+4. **Audit** — "verify the evidence" → `ledgeroot_verify`; "export it" → `ledgeroot_export`.
+
+> The private key is passed via `--env` and stays on the machine, and the tools are structured and deterministic — nothing is guessed at the payment boundary.
+
+#### The same loop, headless
+
+A scripted demo or CI drives it with one prompt. Mandates expire, so sign a fresh one first — `npm run mandate:demo` writes the `demo-mandate-agent` authorization the prompt below spends under:
+
+```bash
+npm run mandate:demo
+claude -p 'You have the ledgeroot MCP tools available. Buy one call to the agent402.tools hash service through ledgeroot_buy, under mandate demo-mandate-agent. The resource is https://agent402.tools/api/hash, use method POST with body {"text":"mandatekey","algo":"sha256"} and intent "agent research: fingerprint a string". Then call ledgeroot_verify. Report exactly three things: the receipt id, the settlement transaction hash, and the verification status.'
+```
+
+A real run of exactly that prompt, on Monad mainnet, came back with:
+
+| Field | Value |
+|---|---|
+| receipt id | `30d543f989cad6076026b8ee61d8476a296ff2df1b5527d66f1f8e83a59e6c56` |
+| settlement tx | `0x5464d7f2080b66cc0d8d254e4549c5a7f142d6060ada1c83f0feb626c0141ba8` |
+| verification | `verified` — 4 receipts, 0 issues |
+
+The agent settled **0.001 USDC** to `agent402.tools`, the receipt records `chainId: 143`, and the transaction is a `transferWithAuthorization` on the USDC contract. **Check that rather than trusting the agent's summary** — the verifier recomputes offline, and `--check-chain` goes to the chain for the settlement itself:
+
+```bash
+node dist/cli.js verify --db ./ledgeroot.sqlite --check-chain
+```
+
+> ⚠️ **Anchoring is not automatic.** The payment path writes the receipt; putting its root on chain is a separate, explicit step — `ledgeroot anchor`, the `ledgeroot_anchor` tool, or `anchor --watch`. It is kept off the pay path deliberately, so the two never share a nonce. A receipt written after the last anchor is simply outside that epoch's inclusion proofs; `verify` still reports `verified`, because an anchor covers the receipts that existed when it was submitted.
 
 ### CLI
 

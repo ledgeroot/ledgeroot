@@ -68,7 +68,9 @@
     "deploy:monad": "tsx deploy/monad.ts",
     "demo:pay": "tsx scripts/pay-demo.ts",
     "demo:buy": "tsx scripts/buy-demo.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "mandate:demo": "tsx scripts/sign-demo-mandate.ts",
+    "mcp:smoke": "tsx scripts/mcp-smoke.ts"
   },
   "keywords": [
     "mcp",
