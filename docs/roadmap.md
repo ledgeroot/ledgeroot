@@ -68,8 +68,8 @@
 | 锚定合约 | `contracts/src/LedgerootAnchor.sol` | ✅ |
 | x402 buyer（策略关口在签名边界）+ facilitator | `src/x402/{buyer,facilitator}.ts` | ✅ |
 | CLI（verify / export / anchor / buy / jwks / serve） | `src/cli.ts` | ✅ |
-| 测试 15 文件 / 134 用例 + Solidity 测试 | `test/`, `contracts/test/` | ✅ |
-| npm 发布 | `package.json`（`v0.9.0`） | ⏳ 待发布（线上仍为 `v0.8.0`）。`v0.9.0` 已备好：锚定 watch/force、锚定密钥分离、`anchors.contract` |
+| 测试 15 文件 / 136 用例 + Solidity 测试 | `test/`, `contracts/test/` | ✅ |
+| npm 发布 | `package.json`（`v0.9.1`） | ⏳ 待发布（线上为 `v0.9.0`）。`v0.9.1`：consistency 对拒付的过期措辞修正 |
 
 ### 2.2 正确性缺陷（源码级，P0）—— ✅ 8/8 已修
 

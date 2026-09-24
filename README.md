@@ -326,7 +326,7 @@ The honest section. These are limits of the **current implementation**, not a re
 | **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
 | **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
 | **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
-| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 134 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
+| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 136 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
 | **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
 | **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
 
@@ -402,7 +402,7 @@ contracts/       LedgerootAnchor (Solidity 0.8.24 + Foundry)
 deploy/          anchor deployment (chain chosen by LEDGEROOT_CHAIN_ID)
 docs/            architecture review / roadmap / competitor and standards research / commercialization
 assets/          logo lockups (light + dark)
-test/            134 tests across 15 files
+test/            136 tests across 15 files
 ```
 
 ---

@@ -80,6 +80,27 @@ describe("analyzeConsistency", () => {
     expect(results[2].reasons).toContain("cumulative 1.2 exceeds total limit 1.0");
   });
 
+  it("flags a paid receipt made after the mandate expired", () => {
+    const result = analyzeConsistency(
+      [receipt({ timestamp: 2_000_000 })],
+      [mandate({ expiresAt: 1000 })],
+    )[0];
+    expect(result.violation).toBe(true);
+    expect(result.reasons).toEqual(["paid after mandate expiry"]);
+  });
+
+  it("does not call a denied attempt a payment when reporting expiry", () => {
+    // A denial carries the same deviation reasons a payment does, so this one
+    // has to be worded for what it is: nothing was paid, and the receipt's own
+    // amount says so.
+    const result = analyzeConsistency(
+      [receipt({ status: "denied", timestamp: 2_000_000 })],
+      [mandate({ expiresAt: 1000 })],
+    )[0];
+    expect(result.violation).toBe(false);
+    expect(result.reasons).toEqual(["attempted after mandate expiry"]);
+  });
+
   it("flags a paid receipt with an unknown mandate", () => {
     const result = analyzeConsistency([receipt({ mandateId: "ghost" })], [mandate()])[0];
     expect(result.violation).toBe(true);

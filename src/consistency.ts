@@ -44,7 +44,12 @@ export function analyzeConsistency(
     const reasons: string[] = [];
 
     if (receipt.timestamp > mandate.expiresAt * 1000) {
-      reasons.push("paid after mandate expiry");
+      // A denial carries the same "deviates from the mandate" reasons a payment
+      // does, but nothing was paid — and calling it paid would leave a false
+      // statement in an evidence API, on a receipt whose own amount is zero.
+      reasons.push(
+        receipt.status === "paid" ? "paid after mandate expiry" : "attempted after mandate expiry",
+      );
     }
     if (
       mandate.counterpartyAllowlist.length > 0 &&
