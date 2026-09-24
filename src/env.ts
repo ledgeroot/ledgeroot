@@ -40,6 +40,20 @@ export function getSigningKey(): string | undefined {
 }
 
 /**
+ * The key that submits anchors.
+ *
+ * Falls back to the payment key when unset, which is the historical behaviour:
+ * the live contract's `owner` is the wallet the payment key derives, and
+ * `LedgerootAnchor` has no `transferOwnership`, so a distinct anchor key only
+ * takes effect once the contract is deployed with it as owner. Setting this is
+ * what lets anchoring run unattended without handing the background loop the
+ * key that moves money.
+ */
+export function getAnchorKey(): string | undefined {
+  return process.env.LEDGEROOT_ANCHOR_KEY ?? getPrivateKey();
+}
+
+/**
  * The addresses whose mandate signatures this machine will accept on import.
  *
  * `LEDGEROOT_TRUSTED_ISSUERS` (comma-separated) takes precedence when set. With

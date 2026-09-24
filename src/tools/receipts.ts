@@ -115,14 +115,80 @@ export async function verifyOnChain(
   return { ...offline, status: classify(issues), issues };
 }
 
-export async function anchor(services: LedgerootServices) {
+export const anchorInput = {
+  minNewReceipts: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      "Anchor only when at least this many receipts arrived since the last anchor (default 1). A ledger with nothing new is never re-anchored.",
+    ),
+};
+export const anchorInputSchema = z.object(anchorInput);
+
+export type AnchorInput = z.infer<typeof anchorInputSchema>;
+
+/** What an anchor attempt did — or why it did nothing. */
+export interface AnchorOutcome {
+  anchored: boolean;
+  /** The epoch the contract assigned; only set when an anchor was submitted. */
+  epoch?: number;
+  root?: string;
+  txHash?: string;
+  /** Receipts the root covers, or the ledger holds when nothing was submitted. */
+  receiptCount?: number;
+  /** Receipts appended since the last anchor. */
+  newReceipts?: number;
+  /** Why nothing was submitted, when `anchored` is false. */
+  reason?: string;
+}
+
+/**
+ * Submit the epoch root — unless the ledger has not moved.
+ *
+ * `minNewReceipts` defaults to 1, so a ledger with nothing new is left alone.
+ * Re-submitting an unchanged root would mint an epoch the contract did not need,
+ * pay gas for it, and leave the local anchor record and the chain's `latestRoot`
+ * describing two different "latest" anchors.
+ */
+export async function anchor(
+  services: LedgerootServices,
+  input: AnchorInput = {},
+): Promise<AnchorOutcome> {
   if (!services.anchorer) {
     return { anchored: false, reason: "no anchorer configured (set LEDGEROOT_ANCHOR_ADDRESS)" };
   }
   if (!services.anchorer.enabled) {
-    return { anchored: false, reason: "anchoring disabled (LEDGEROOT_PRIVATE_KEY not set)" };
+    return {
+      anchored: false,
+      reason: "anchoring disabled (set LEDGEROOT_PRIVATE_KEY or LEDGEROOT_ANCHOR_KEY)",
+    };
   }
+
   const receipts = services.store.listReceipts();
+  const last = services.store.latestAnchor();
+  // An anchor predating the receipt boundary cannot say what it covered, so its
+  // count reads as zero: a redundant anchor is the cheap mistake, a skipped one
+  // is the expensive one.
+  const alreadyCovered = last?.receiptCount ?? 0;
+  const newReceipts = receipts.length - alreadyCovered;
+  const minNewReceipts = input.minNewReceipts ?? 1;
+
+  if (newReceipts < minNewReceipts) {
+    return {
+      anchored: false,
+      receiptCount: receipts.length,
+      newReceipts,
+      reason:
+        newReceipts === 0
+          ? last
+            ? `no receipts since epoch ${last.epoch}; nothing to anchor`
+            : "no receipts to anchor"
+          : `only ${newReceipts} new receipt(s) since the last anchor; minimum is ${minNewReceipts}`,
+    };
+  }
+
   const root = epochRoot(receipts);
 
   // The epoch comes from the contract, which owns the sequence. Read it before
@@ -134,7 +200,14 @@ export async function anchor(services: LedgerootServices) {
   const epoch = await services.anchorer.currentEpoch().catch(() => before + 1);
 
   services.store.recordAnchor(epoch, root, txHash, receipts.length);
-  return { anchored: true, epoch, root, txHash, receiptCount: receipts.length };
+  return {
+    anchored: true,
+    epoch,
+    root,
+    txHash,
+    receiptCount: receipts.length,
+    newReceipts,
+  };
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   receiptListInput,
   receiptGetInput,
   verifyInput,
+  anchorInput,
 } from "./receipts.js";
 
 function text(payload: unknown) {
@@ -131,9 +132,11 @@ export function createToolRouter(server: McpServer, services: LedgerootServices)
     "ledgeroot_anchor",
     {
       title: "Anchor epoch",
-      description: "Submit the epoch Merkle root of all receipts to the anchor contract.",
+      description:
+        "Submit the epoch Merkle root of all receipts to the anchor contract. Skips when the ledger has not moved since the last anchor, so a redundant root is never re-submitted.",
+      inputSchema: anchorInput,
     },
-    async () => text(await anchor(services)),
+    async (args) => text(await anchor(services, args)),
   );
 
   server.registerTool(

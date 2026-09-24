@@ -8,7 +8,7 @@ import {
   MONAD_FACILITATOR_URL,
   MONAD_TESTNET_X402,
 } from "./x402/facilitator.js";
-import { getPrivateKey, isDryRun } from "./env.js";
+import { getAnchorKey, getPrivateKey, isDryRun } from "./env.js";
 import { Anchorer } from "./anchor/anchorer.js";
 import { anchorChain, defaultRpcUrls } from "./chains.js";
 import type { LedgerootServices } from "./context.js";
@@ -44,7 +44,10 @@ export function createServices(options: BootstrapOptions = {}): LedgerootService
         chain,
         rpcUrl: defaultRpcUrls()[chain.id],
         contractAddress: anchorAddress as Hex,
-        privateKey,
+        // Deliberately not the payment key when LEDGEROOT_ANCHOR_KEY is set:
+        // anchoring can run unattended, and the loop that submits roots should
+        // not be able to move funds.
+        privateKey: getAnchorKey(),
       })
     : undefined;
 

@@ -97,6 +97,87 @@ describe("anchor flow", () => {
     store.close();
   });
 
+  it("does not re-submit an unchanged root", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.appendReceipt(denied("first"));
+
+    const submitted: string[] = [];
+    const anchorer = {
+      enabled: true,
+      anchor: async (root: string) => {
+        submitted.push(root);
+        return "0xfaketx";
+      },
+      currentEpoch: async () => 1,
+    };
+    const services = { store, anchorer } as unknown as LedgerootServices;
+
+    expect((await anchor(services)).anchored).toBe(true);
+    expect(submitted).toHaveLength(1);
+
+    // Same ledger, same root. Anchoring again would pay to mint an epoch the
+    // contract did not need, and leave the local record and the chain's
+    // `latestRoot` naming two different "latest" anchors.
+    const second = await anchor(services);
+    expect(second).toMatchObject({ anchored: false, newReceipts: 0 });
+    expect(submitted).toHaveLength(1);
+
+    store.close();
+  });
+
+  it("waits for minNewReceipts before anchoring", async () => {
+    const store = new LedgerootStore({ path: DB });
+    const a = denied("first");
+    store.appendReceipt(a);
+
+    const submitted: string[] = [];
+    const anchorer = {
+      enabled: true,
+      anchor: async (root: string) => {
+        submitted.push(root);
+        return "0xfaketx";
+      },
+      currentEpoch: async () => 1,
+    };
+    const services = { store, anchorer } as unknown as LedgerootServices;
+
+    expect(await anchor(services, { minNewReceipts: 3 })).toMatchObject({
+      anchored: false,
+      newReceipts: 1,
+    });
+    expect(submitted).toHaveLength(0);
+
+    store.appendReceipt(denied("second", a.receiptHash));
+    store.appendReceipt(denied("third", a.receiptHash));
+
+    expect(await anchor(services, { minNewReceipts: 3 })).toMatchObject({
+      anchored: true,
+      receiptCount: 3,
+      newReceipts: 3,
+    });
+    expect(submitted).toHaveLength(1);
+
+    store.close();
+  });
+
+  it("does not anchor an empty ledger", async () => {
+    const store = new LedgerootStore({ path: DB });
+    const submitted: string[] = [];
+    const anchorer = {
+      enabled: true,
+      anchor: async (root: string) => {
+        submitted.push(root);
+        return "0xfaketx";
+      },
+      currentEpoch: async () => 1,
+    };
+    const services = { store, anchorer } as unknown as LedgerootServices;
+
+    expect(await anchor(services)).toMatchObject({ anchored: false, newReceipts: 0 });
+    expect(submitted).toHaveLength(0);
+    store.close();
+  });
+
   it("reads the latest anchor by when it was recorded, not by its epoch", () => {
     const store = new LedgerootStore({ path: DB });
 

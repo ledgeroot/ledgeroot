@@ -4,6 +4,7 @@ import { createServices } from "./bootstrap.js";
 import { anchor, exportEvidence, keySet, verify, verifyOnChain } from "./tools/receipts.js";
 import { handleBuy } from "./tools/buy.js";
 import { serveMCP } from "./mcp.js";
+import type { LedgerootServices } from "./context.js";
 
 loadEnv();
 
@@ -40,6 +41,80 @@ function parseArgs(argv: string[]): { positionals: string[]; flags: Map<string, 
   return { positionals, flags };
 }
 
+/** Wait, but wake early if the process is asked to stop. */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    let timer: NodeJS.Timeout;
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Anchor once, or keep anchoring as receipts arrive.
+ *
+ * The watch loop is deliberately forgiving: a failed anchor is logged and
+ * retried on the next tick rather than ending the process. Anchoring sits off
+ * the payment path, so a chain hiccup must not stop the ledger from recording
+ * payments, and being briefly behind on anchors is not an error.
+ */
+async function runAnchor(services: LedgerootServices, args: string[]): Promise<void> {
+  const { flags } = parseArgs(args);
+
+  const minRaw = flags.get("--min-receipts")?.[0];
+  const minNewReceipts = minRaw === undefined ? undefined : Number(minRaw);
+  if (minNewReceipts !== undefined && (!Number.isInteger(minNewReceipts) || minNewReceipts < 1)) {
+    throw new Error(`--min-receipts expects a positive integer, got "${minRaw}"`);
+  }
+
+  const once = async () => {
+    console.log(JSON.stringify(await anchor(services, { minNewReceipts }), null, 2));
+  };
+
+  if (!flags.has("--watch")) {
+    await once();
+    return;
+  }
+
+  const everyRaw = flags.get("--every")?.[0];
+  const everySeconds = everyRaw === undefined ? 600 : Number(everyRaw);
+  if (!Number.isFinite(everySeconds) || everySeconds <= 0) {
+    throw new Error(`--every expects a positive number of seconds, got "${everyRaw}"`);
+  }
+
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+
+  console.log(
+    `watching: anchoring at most every ${everySeconds}s, once ${minNewReceipts ?? 1}+ new receipt(s) exist. Ctrl-C to stop.`,
+  );
+
+  while (!controller.signal.aborted) {
+    try {
+      await once();
+    } catch (error) {
+      console.error(`anchor failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!controller.signal.aborted) {
+      await sleep(everySeconds * 1000, controller.signal);
+    }
+  }
+  console.log("stopped");
+}
+
 const USAGE = `ledgeroot — evidence engine for agent x402 payments
 
 Usage:
@@ -47,7 +122,10 @@ Usage:
                                    Offline verification of the receipt chain + anchor
                                    --check-chain also confirms each settlement via RPC
   ledgeroot export [--db <path>]   Export the evidence bundle as JSON
-  ledgeroot anchor [--db <path>]   Submit the epoch Merkle root on-chain
+  ledgeroot anchor [--db <path>] [--watch] [--every <seconds>] [--min-receipts <n>]
+                                   Submit the epoch Merkle root on-chain. --watch keeps
+                                   anchoring as receipts arrive; a ledger with nothing new
+                                   is skipped so no redundant root is ever paid for.
   ledgeroot buy <url> --mandate <id> [--method GET|POST] [--body <text>]
                                    [--header "name: value"] [--chain <id>] [--intent <text>]
                                    [--task <id>] [--request <id>] [--db <path>]
@@ -86,7 +164,7 @@ async function main(): Promise<void> {
         console.log(JSON.stringify(exportEvidence(services), null, 2));
         break;
       case "anchor":
-        console.log(JSON.stringify(await anchor(services), null, 2));
+        await runAnchor(services, args);
         break;
       case "buy": {
         const { positionals, flags } = parseArgs(args);

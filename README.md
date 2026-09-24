@@ -78,7 +78,11 @@ Then it is all conversation:
 ```bash
 node dist/cli.js verify [--db <path>] [--check-chain]   # offline verification (+ optional chain check)
 node dist/cli.js export [--db <path>]                   # evidence bundle as JSON
-node dist/cli.js anchor [--db <path>]                   # submit the epoch Merkle root on-chain
+node dist/cli.js anchor [--db <path>] [--watch] [--every <s>] [--min-receipts <n>]
+                                                        # submit the epoch root on-chain.
+                                                        # --watch keeps anchoring as receipts
+                                                        # arrive; a ledger with nothing new is
+                                                        # skipped, so no root is re-paid for
 node dist/cli.js buy <url> --mandate <id> \
   [--method POST] [--body '<json>'] [--chain 143]        # fetch a URL, pay its 402, record the receipt
 node dist/cli.js jwks                                   # the JWKS a third party needs
@@ -219,7 +223,7 @@ A few things are deliberate:
 
 | Variable | Job | If unset |
 |---|---|---|
-| `LEDGEROOT_PRIVATE_KEY` | **Moves money**: signs EIP-3009 authorizations and submits anchor transactions | cannot pay |
+| `LEDGEROOT_PRIVATE_KEY` | **Moves money**: signs EIP-3009 authorizations (and submits anchors unless `LEDGEROOT_ANCHOR_KEY` is set) | cannot pay |
 | `LEDGEROOT_SIGNING_KEY` | **Only makes statements**: signs receipts | **receipts are unsigned → `verify` reports `incomplete`, not `verified`** |
 
 They deliberately **do not fall back to each other**: one key moves money, the other attests to what happened, and neither can do the other's job. Evidence that cannot be attributed should not read as `verified`.
@@ -327,7 +331,7 @@ The honest section. These are limits of the **current implementation**, not a re
 
 `contracts/src/LedgerootAnchor.sol` — the only contract in the project, storing **a 32-byte root, a back-pointer and an epoch counter**, and nothing else.
 
-- **Owner-gated**: `anchor()` is `onlyOwner`. An open `anchor()` reduces "this root is on chain" to "somebody anchored something here" — an attacker could publish a forged root, or displace the honest one so valid receipts verify as `tampered`. The owner is the **anchoring wallet** (derived from `LEDGEROOT_PRIVATE_KEY`), not the deployer, so the two keys can be separated.
+- **Owner-gated**: `anchor()` is `onlyOwner`. An open `anchor()` reduces "this root is on chain" to "somebody anchored something here" — an attacker could publish a forged root, or displace the honest one so valid receipts verify as `tampered`. The owner is the **anchoring wallet** (derived from `LEDGEROOT_PRIVATE_KEY`, or `LEDGEROOT_ANCHOR_KEY` when set), not the deployer, so the two keys can be separated.
 - **The contract owns the epoch**: `lastEpoch` increments on every anchor, and clients read it from the contract instead of counting locally — otherwise a fresh database would label its first anchor "epoch 1" no matter how far the contract has already run.
 - **RFC 6962 MTH for Merkle**: leaves are `SHA-256(0x00 ‖ d)`, internal nodes `SHA-256(0x01 ‖ L ‖ R)`, split at the largest power of two below n (no duplicating an odd trailing node). **Domain separation** is what buys second-preimage resistance. Tests cross-check against the stack-based algorithm in RFC 9162 §2.1.2 as an independent oracle.
 - Deployed to Monad testnet (chainId 10143). One deployment used for demos: `0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30` (owner `0x055A…A8f7`) — **a testnet address that may be redeployed at any time; trust your own `.env`**.
@@ -357,7 +361,8 @@ The honest section. These are limits of the **current implementation**, not a re
 | Variable | Meaning |
 |---|---|
 | `LEDGEROOT_DB` | SQLite database path (defaults to `ledgeroot.sqlite`) |
-| `LEDGEROOT_PRIVATE_KEY` | The key that **moves money**: payment signing + anchor submission. Never leaves the machine |
+| `LEDGEROOT_PRIVATE_KEY` | The key that **moves money**: payment signing. Never leaves the machine |
+| `LEDGEROOT_ANCHOR_KEY` | The key that **submits anchors**. Falls back to `LEDGEROOT_PRIVATE_KEY`. Set it to keep the unattended anchor loop off the key that moves money — the contract's `owner` must be this key, and `LedgerootAnchor` has no `transferOwnership`, so full separation takes a fresh deployment |
 | `LEDGEROOT_SIGNING_KEY` | The **receipt signing** key (32-byte hex seed), deliberately separate from the payment key. **If unset, receipts are unsigned and verification reports `incomplete`** |
 | `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator endpoint (defaults to `https://x402-facilitator.molandak.org` — public, no API key) |
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC (defaults to `https://testnet-rpc.monad.xyz`) |
