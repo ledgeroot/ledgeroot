@@ -83,6 +83,7 @@ export class LedgerootStore {
         epoch INTEGER NOT NULL,
         root TEXT NOT NULL,
         tx_hash TEXT,
+        contract TEXT,
         receipt_count INTEGER,
         anchored_at INTEGER NOT NULL
       );
@@ -120,12 +121,22 @@ export class LedgerootStore {
    * the ledger against a stale root. Anchors now carry their own sequence and
    * `epoch` is a plain column: it is the contract's number, not ours, and two
    * contracts may legitimately both have an epoch 1.
+   *
+   * `anchors.contract`: without it a record could not say which contract it was
+   * submitted to, so a ledger that looked anchored could in fact be anchored
+   * somewhere that is no longer configured — indistinguishable from a current
+   * record until someone read the contract by hand. Rows written before this
+   * column existed keep NULL, which reads as "target unknown" rather than
+   * forcing a re-anchor on every upgrade.
    */
   private migrate(): void {
     if (this.receiptsNeedSeqKey()) this.rebuildReceipts();
     if (!this.hasColumn("anchors", "id")) this.rebuildAnchors();
     if (!this.hasColumn("anchors", "receipt_count")) {
       this.db.exec("ALTER TABLE anchors ADD COLUMN receipt_count INTEGER");
+    }
+    if (!this.hasColumn("anchors", "contract")) {
+      this.db.exec("ALTER TABLE anchors ADD COLUMN contract TEXT");
     }
   }
 
@@ -395,13 +406,23 @@ export class LedgerootStore {
     return row ? (JSON.parse(row.mandate_json) as Mandate) : null;
   }
 
-  /** Record an anchor along with how many receipts its root covers. */
-  recordAnchor(epoch: number, root: string, txHash: string | undefined, receiptCount: number): void {
+  /**
+   * Record an anchor: how many receipts its root covers, and which contract it
+   * was submitted to. The contract is what lets a later reader tell "anchored
+   * elsewhere" apart from "anchored here, unchanged".
+   */
+  recordAnchor(
+    epoch: number,
+    root: string,
+    txHash: string | undefined,
+    receiptCount: number,
+    contract?: string,
+  ): void {
     this.db
       .prepare(
-        "INSERT INTO anchors (epoch, root, tx_hash, receipt_count, anchored_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO anchors (epoch, root, tx_hash, contract, receipt_count, anchored_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
-      .run(epoch, root, txHash ?? null, receiptCount, Date.now());
+      .run(epoch, root, txHash ?? null, contract ?? null, receiptCount, Date.now());
   }
 
   latestAnchor(): {
@@ -410,11 +431,25 @@ export class LedgerootStore {
     txHash?: string;
     /** Receipts covered by this root; null for anchors predating boundaries. */
     receiptCount: number | null;
+    /**
+     * The contract this root was submitted to. Absent for anchors recorded
+     * before the column existed, where the target is simply unknown — those are
+     * taken at face value rather than treated as belonging to another contract.
+     */
+    contract?: string;
   } | null {
     const row = this.db
-      .prepare("SELECT epoch, root, tx_hash, receipt_count FROM anchors ORDER BY id DESC LIMIT 1")
+      .prepare(
+        "SELECT epoch, root, tx_hash, contract, receipt_count FROM anchors ORDER BY id DESC LIMIT 1",
+      )
       .get() as
-      | { epoch: number; root: string; tx_hash: string | null; receipt_count: number | null }
+      | {
+          epoch: number;
+          root: string;
+          tx_hash: string | null;
+          contract: string | null;
+          receipt_count: number | null;
+        }
       | undefined;
     if (!row) return null;
     return {
@@ -422,6 +457,7 @@ export class LedgerootStore {
       root: row.root,
       txHash: row.tx_hash ?? undefined,
       receiptCount: row.receipt_count,
+      contract: row.contract ?? undefined,
     };
   }
 

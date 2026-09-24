@@ -127,8 +127,8 @@ Usage:
                                    Submit the epoch Merkle root on-chain. --watch keeps
                                    anchoring as receipts arrive; a ledger with nothing new
                                    is skipped so no redundant root is ever paid for.
-                                   --force anchors anyway — for re-anchoring onto a new
-                                   contract, where the local record still names the old one.
+                                   --force anchors anyway — for a record whose contract is
+                                   unknown (it predates the column), or a deliberate re-anchor.
   ledgeroot buy <url> --mandate <id> [--method GET|POST] [--body <text>]
                                    [--header "name: value"] [--chain <id>] [--intent <text>]
                                    [--task <id>] [--request <id>] [--db <path>]

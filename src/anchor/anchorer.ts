@@ -58,6 +58,15 @@ export class Anchorer {
   }
 
   /**
+   * The contract roots are submitted to. Recorded alongside every anchor, so a
+   * later reader can tell "anchored somewhere else" from "anchored here"; the
+   * config is the only place that knows it.
+   */
+  get address(): Hex {
+    return this.config.contractAddress;
+  }
+
+  /**
    * The contract's current epoch counter.
    *
    * The contract owns this sequence — it increments on every anchor — so this

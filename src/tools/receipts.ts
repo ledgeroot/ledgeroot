@@ -89,6 +89,12 @@ export function verify(services: LedgerootServices) {
           epoch: anchor.epoch,
           root: anchor.root,
           txHash: anchor.txHash,
+          /**
+           * The contract this record was submitted to, so a reader can tell
+           * whether it is the one now configured. Absent for records written
+           * before the column existed, where the target is unknown.
+           */
+          contract: anchor.contract,
           receiptCount: anchor.receiptCount,
           status: anchorResult?.status,
           issues: anchorResult?.issues ?? [],
@@ -142,6 +148,8 @@ export interface AnchorOutcome {
   epoch?: number;
   root?: string;
   txHash?: string;
+  /** The contract the root was submitted to. */
+  contract?: string;
   /** Receipts the root covers, or the ledger holds when nothing was submitted. */
   receiptCount?: number;
   /** Receipts appended since the last anchor. */
@@ -157,6 +165,11 @@ export interface AnchorOutcome {
  * Re-submitting an unchanged root would mint an epoch the contract did not need,
  * pay gas for it, and leave the local anchor record and the chain's `latestRoot`
  * describing two different "latest" anchors.
+ *
+ * A record written against a *different* contract does not count as "nothing
+ * new" — the switch is read from the recorded contract, so repointing
+ * `LEDGEROOT_ANCHOR_ADDRESS` re-anchors on its own instead of waiting for a
+ * payment to move the counter or for someone to remember `force`.
  */
 export async function anchor(
   services: LedgerootServices,
@@ -172,19 +185,26 @@ export async function anchor(
     };
   }
 
+  const contract = services.anchorer.address;
   const receipts = services.store.listReceipts();
   const last = services.store.latestAnchor();
+  // A record from another contract says nothing about this one: the root it
+  // names lives on a contract that is no longer configured, so the ledger is
+  // effectively unanchored here. A record with no contract at all predates the
+  // column, which makes its target unknown — taken at face value rather than
+  // forcing a re-anchor on every upgrade.
+  const sameContract =
+    last !== null &&
+    (last.contract === undefined || last.contract.toLowerCase() === contract.toLowerCase());
   // An anchor predating the receipt boundary cannot say what it covered, so its
   // count reads as zero: a redundant anchor is the cheap mistake, a skipped one
   // is the expensive one.
-  const alreadyCovered = last?.receiptCount ?? 0;
+  const alreadyCovered = sameContract ? (last?.receiptCount ?? 0) : 0;
   const newReceipts = receipts.length - alreadyCovered;
   const minNewReceipts = input.minNewReceipts ?? 1;
 
-  // Skipping is the point of the check, but a contract change makes the local
-  // record stale rather than current: the receipts are unchanged and the root is
-  // the same, yet the contract now configured holds nothing. `force` re-anchors
-  // that state without inventing a payment to move the counter.
+  // `force` is still the escape hatch for what the column cannot decide: a
+  // record whose target is unknown, or a deliberate re-anchor.
   if (!input.force && newReceipts < minNewReceipts) {
     return {
       anchored: false,
@@ -209,12 +229,13 @@ export async function anchor(
   const txHash = await services.anchorer.anchor(root);
   const epoch = await services.anchorer.currentEpoch().catch(() => before + 1);
 
-  services.store.recordAnchor(epoch, root, txHash, receipts.length);
+  services.store.recordAnchor(epoch, root, txHash, receipts.length, contract);
   return {
     anchored: true,
     epoch,
     root,
     txHash,
+    contract,
     receiptCount: receipts.length,
     newReceipts,
   };

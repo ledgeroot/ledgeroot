@@ -83,8 +83,9 @@ node dist/cli.js anchor [--db <path>] [--watch] [--every <s>] [--min-receipts <n
                                                         # --watch keeps anchoring as receipts
                                                         # arrive; a ledger with nothing new is
                                                         # skipped, so no root is re-paid for.
-                                                        # --force anchors anyway (after a
-                                                        # contract change, say)
+                                                        # a new contract re-anchors by itself;
+                                                        # --force is for a record whose
+                                                        # contract is unknown, or a re-anchor
 node dist/cli.js buy <url> --mandate <id> \
   [--method POST] [--body '<json>'] [--chain 143]        # fetch a URL, pay its 402, record the receipt
 node dist/cli.js jwks                                   # the JWKS a third party needs
@@ -255,6 +256,8 @@ Verification **depends on no server** — `ledgeroot verify` reads the local dat
 
 **Anchor boundaries**: an epoch root covers "the receipts that existed at submission time" (`receiptCount`). Verification slices back to that boundary before recomputing, so **payments made after an anchor do not read as tampering**; conversely, fewer receipts present than the recorded count → `tampered` (that is a deletion).
 
+**Anchors record their contract.** Every local anchor names the contract its root was submitted to, so repointing `LEDGEROOT_ANCHOR_ADDRESS` is detected instead of silently skipped: a record from the old contract cannot make the new one look already-anchored, and the next `anchor` re-submits on its own. Records written before the column existed carry no contract — their target is unknown, which is the case `--force` is for.
+
 ---
 
 ## The five default policies (fail-closed)
@@ -323,7 +326,7 @@ The honest section. These are limits of the **current implementation**, not a re
 | **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
 | **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
 | **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
-| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 133 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
+| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 134 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
 | **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
 | **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
 
@@ -399,7 +402,7 @@ contracts/       LedgerootAnchor (Solidity 0.8.24 + Foundry)
 deploy/          anchor deployment (chain chosen by LEDGEROOT_CHAIN_ID)
 docs/            architecture review / roadmap / competitor and standards research / commercialization
 assets/          logo lockups (light + dark)
-test/            133 tests across 15 files
+test/            134 tests across 15 files
 ```
 
 ---

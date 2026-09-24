@@ -11,13 +11,17 @@ import type { LedgerootServices } from "../src/context.js";
 
 const DB = "/tmp/cc-anchor-test.sqlite";
 
+/** A stand-in for the configured anchor contract. */
+const CONTRACT = "0x00000000000000000000000000000000000000aa";
+
 /**
  * A contract stub. `chainEpoch` stands in for what `lastEpoch()` returns, which
  * on a real chain is the number of the anchor just submitted.
  */
-function fakeAnchorer(txHash = "0xfaketx", chainEpoch = 1) {
+function fakeAnchorer(txHash = "0xfaketx", chainEpoch = 1, contract = CONTRACT) {
   return {
     enabled: true,
+    address: contract,
     anchor: async (_root: string) => txHash,
     currentEpoch: async () => chainEpoch,
   };
@@ -66,6 +70,9 @@ describe("anchor flow", () => {
     expect(latest?.epoch).toBe(1);
     expect(latest?.txHash).toBe("0xfaketx");
     expect(latest?.receiptCount).toBe(2);
+    // The record names the contract it went to, which is what lets a later
+    // reader spot that the configured one has changed.
+    expect(latest?.contract).toBe(CONTRACT);
 
     store.close();
   });
@@ -104,6 +111,7 @@ describe("anchor flow", () => {
     const submitted: string[] = [];
     const anchorer = {
       enabled: true,
+      address: CONTRACT,
       anchor: async (root: string) => {
         submitted.push(root);
         return "0xfaketx";
@@ -133,6 +141,7 @@ describe("anchor flow", () => {
     const submitted: string[] = [];
     const anchorer = {
       enabled: true,
+      address: CONTRACT,
       anchor: async (root: string) => {
         submitted.push(root);
         return "0xfaketx";
@@ -168,6 +177,7 @@ describe("anchor flow", () => {
     const submitted: string[] = [];
     const anchorer = {
       enabled: true,
+      address: CONTRACT,
       anchor: async (root: string) => {
         submitted.push(root);
         return "0xfaketx";
@@ -179,9 +189,10 @@ describe("anchor flow", () => {
     await anchor(services);
     expect(submitted).toHaveLength(1);
 
-    // Switching anchor contracts leaves the local record naming the old one:
-    // the receipts and the root are unchanged, so only a forced run puts them
-    // on the contract now configured.
+    // The record matches the configured contract and nothing has moved, so the
+    // dirty check would skip. `force` overrides it — for a deliberate
+    // re-anchor, or a record whose target is unknown because it predates the
+    // contract column.
     epoch = 2;
     expect(await anchor(services, { force: true })).toMatchObject({
       anchored: true,
@@ -192,11 +203,45 @@ describe("anchor flow", () => {
     store.close();
   });
 
+  it("re-anchors by itself when the configured contract changes", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.appendReceipt(denied("first"));
+
+    const submitted: string[] = [];
+    let contract = CONTRACT;
+    const anchorer = {
+      enabled: true,
+      get address() {
+        return contract;
+      },
+      anchor: async (root: string) => {
+        submitted.push(root);
+        return "0xfaketx";
+      },
+      currentEpoch: async () => 1,
+    };
+    const services = { store, anchorer } as unknown as LedgerootServices;
+
+    expect((await anchor(services)).anchored).toBe(true);
+    expect(store.latestAnchor()?.contract).toBe(CONTRACT);
+
+    // Same receipts, same root — but the record names the old contract, so the
+    // new one holds nothing. Reading that as "already anchored" would leave the
+    // configured contract empty and needing `force` to notice.
+    contract = "0x00000000000000000000000000000000000000bb";
+    expect(await anchor(services)).toMatchObject({ anchored: true, contract });
+    expect(submitted).toHaveLength(2);
+    expect(store.latestAnchor()?.contract).toBe(contract);
+
+    store.close();
+  });
+
   it("does not anchor an empty ledger", async () => {
     const store = new LedgerootStore({ path: DB });
     const submitted: string[] = [];
     const anchorer = {
       enabled: true,
+      address: CONTRACT,
       anchor: async (root: string) => {
         submitted.push(root);
         return "0xfaketx";
@@ -217,14 +262,27 @@ describe("anchor flow", () => {
     // restarts at 1. Ordering by epoch would keep returning the old anchor, and
     // verification would check the ledger against a root the live contract
     // never saw.
-    store.recordAnchor(6, "aa".repeat(32), "0xold", 4);
-    store.recordAnchor(1, "bb".repeat(32), "0xnew", 5);
+    store.recordAnchor(
+      6,
+      "aa".repeat(32),
+      "0xold",
+      4,
+      "0x0000000000000000000000000000000000000011",
+    );
+    store.recordAnchor(
+      1,
+      "bb".repeat(32),
+      "0xnew",
+      5,
+      "0x0000000000000000000000000000000000000022",
+    );
 
     const latest = store.latestAnchor();
     expect(latest?.root).toBe("bb".repeat(32));
     expect(latest?.epoch).toBe(1);
     expect(latest?.txHash).toBe("0xnew");
     expect(latest?.receiptCount).toBe(5);
+    expect(latest?.contract).toBe("0x0000000000000000000000000000000000000022");
     store.close();
   });
 

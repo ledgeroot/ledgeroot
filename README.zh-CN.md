@@ -82,7 +82,7 @@ node dist/cli.js anchor [--db <path>] [--watch] [--every <秒>] [--min-receipts 
                                                         # 提交 epoch 根上链。
                                                         # --watch 随收据到达持续锚定；
                                                         # 账本无新增则跳过，不会重复为同一个根付 gas
-                                                        # --force 无新增也锚定（换合约后用）
+                                                        # 换合约会自动重锚；--force 用于合约未知的记录
 node dist/cli.js buy <url> --mandate <id> \
   [--method POST] [--body '<json>'] [--chain 143]        # 取一个 URL、付掉它的 402、写下收据
 node dist/cli.js jwks                                   # 第三方验签所需的 JWKS
@@ -253,6 +253,8 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 
 **锚定边界**：epoch 根覆盖的是「提交那一刻已存在的收据数」（`receiptCount`）。验证按该边界切片重算，所以**锚定之后再发生支付不会误报篡改**；反过来，已锚定的收据少于记录数 → `tampered`（是删除）。
 
+**锚定记录会写明合约。** 每条本地锚定记录都标出它的根提交到了哪个合约，所以改 `LEDGEROOT_ANCHOR_ADDRESS` 会被识别出来而不是被静默跳过：旧合约的记录无法让新合约看起来"已锚过"，下一次 `anchor` 会自动重提。早于该列存在的记录不带合约——目标未知，这才是 `--force` 的用途。
+
 ---
 
 ## 五条默认策略（fail-closed）
@@ -321,7 +323,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](https://github.com/ledgeroot/mandatekey) 的证据包里 |
 | **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
-| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、133 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
+| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、134 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
 | **没有聚合层** | 全库没有一处 SQL 聚合（无 `GROUP BY` / `SUM` / `COUNT`），也没有对账导出。这是生态位里唯一能收费的那一层，目前**完全不存在** |
 | **ERC-8004 只埋了字段** | `Mandate.agentId` 存在但未接注册表校验 |
 
@@ -397,7 +399,7 @@ contracts/       LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/          锚定合约部署（链由 LEDGEROOT_CHAIN_ID 选择）
 docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方向
 assets/          字标（亮 / 暗两版）
-test/            15 个文件、133 个测试
+test/            15 个文件、134 个测试
 ```
 
 ---
