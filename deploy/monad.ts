@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createPublicClient, createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { pathToFileURL } from "node:url";
-import { loadEnv } from "../src/env.js";
+import { getAnchorKey, loadEnv } from "../src/env.js";
 import { anchorChain, defaultRpcUrls } from "../src/chains.js";
 import { anchorAbi } from "../src/anchor/anchorer.js";
 
@@ -29,8 +29,11 @@ export const monad = {
  * to go and fix.
  */
 function privateKeyFromEnv(name: string): Hex {
-  const value = process.env[name] ?? "";
-  const body = value.startsWith("0x") ? value.slice(2) : value;
+  return requireHexKey(process.env[name], name);
+}
+
+function requireHexKey(value: string | undefined, name: string): Hex {
+  const body = value?.startsWith("0x") ? value.slice(2) : (value ?? "");
   if (!/^[0-9a-fA-F]{64}$/.test(body)) {
     throw new Error(
       `${name} is not a 32-byte hex key (is it still the placeholder from .env.example?)`,
@@ -40,13 +43,19 @@ function privateKeyFromEnv(name: string): Hex {
 }
 
 /**
- * The contract owner is the wallet that anchors. `LEDGEROOT_PRIVATE_KEY` is the
- * key the Anchorer submits with, so it is the account `anchor()` has to
- * authorize; deriving it here instead of defaulting to the deployer keeps the
- * two keys separable, which is why they are separate variables to begin with.
+ * The contract owner is the wallet that anchors, so it has to be derived the
+ * same way the Anchorer is configured — `getAnchorKey()`, which prefers
+ * `LEDGEROOT_ANCHOR_KEY` and falls back to the payment key.
+ *
+ * Deriving it from `LEDGEROOT_PRIVATE_KEY` unconditionally (as this did) would
+ * deploy a contract the configured anchoring key cannot write to, and the first
+ * anchor would revert `NotOwner`. The owner is not the deployer because that is
+ * the point of the split — the two keys are separate variables.
  */
 function resolveOwner(): Hex {
-  return privateKeyToAccount(privateKeyFromEnv("LEDGEROOT_PRIVATE_KEY")).address;
+  return privateKeyToAccount(
+    requireHexKey(getAnchorKey(), "LEDGEROOT_ANCHOR_KEY (or LEDGEROOT_PRIVATE_KEY)"),
+  ).address;
 }
 
 /** Deploy the LedgerootAnchor contract. Bytecode comes from `forge build`. */

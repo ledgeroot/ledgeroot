@@ -78,10 +78,11 @@ claude mcp add ledgeroot \
 ```bash
 node dist/cli.js verify [--db <path>] [--check-chain]   # 离线验证（可选加链上校验）
 node dist/cli.js export [--db <path>]                   # 导出证据包 JSON
-node dist/cli.js anchor [--db <path>] [--watch] [--every <秒>] [--min-receipts <n>]
+node dist/cli.js anchor [--db <path>] [--watch] [--every <秒>] [--min-receipts <n>] [--force]
                                                         # 提交 epoch 根上链。
                                                         # --watch 随收据到达持续锚定；
                                                         # 账本无新增则跳过，不会重复为同一个根付 gas
+                                                        # --force 无新增也锚定（换合约后用）
 node dist/cli.js buy <url> --mandate <id> \
   [--method POST] [--body '<json>'] [--chain 143]        # 取一个 URL、付掉它的 402、写下收据
 node dist/cli.js jwks                                   # 第三方验签所需的 JWKS
@@ -312,7 +313,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | 边界 | 现状 |
 |---|---|
 | **支付路径仍然只支持测试网** | `X402_NETWORKS` 现在有两个实例（Monad 测试网 10143、主网 143），`ledgeroot_buy` 按 `chainId` 二选一。**`ledgeroot_pay` 没有**：`bootstrap.ts` 仍然无条件把 `MONAD_TESTNET_X402` 交给 facilitator，也没有环境变量能改 |
-| **区块时间不是合格时间源** | 锚定已跑在 Monad 主网（`0xca08c795357ae8bcee8af592c827d419750fdf84`），比之前的测试网合约进了一步，但区块时间戳仍不是外部权威；后续仍是 RFC 3161 合格时间戳 |
+| **区块时间不是合格时间源** | 锚定已跑在 Monad 主网（`0x958f887f203a08f43fe45ba00a6a4199b9e01b61`），比之前的测试网合约进了一步，但区块时间戳仍不是外部权威；后续仍是 RFC 3161 合格时间戳 |
 | **MPP 只有接缝，没有实现** | `segments.tx.protocol` 是显式维度：**未知协议报 `incomplete`，不放行也不冤枉**。但 MPP 的字段级形状未定，所以没有预设载荷，也没有 provider。**这是 [roadmap.md](./docs/roadmap.md) 里排在第一位的待补项** |
 | **热路径未加索引** | 全库没有一个 `CREATE INDEX`：单笔支付有 4 次未索引全表扫描，其中两次还会 `JSON.parse` 整个匹配集。单笔 O(n)，一个月 O(n²) |
 | **单进程、单租户** | 一个库、一把签名钥、一把付款钥。数据模型里没有租户边界——`agentId` / `mandateId` 不是隔离键 |
@@ -320,7 +321,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 | **包含证明只在库 API** | `merkleProof` / `verifyMerkleProof`（RFC 6962 §2.1.3 审计路径）已实现并有交叉验证测试，但**本仓库的 CLI 与 `ledgeroot_verify` 尚未输出或校验逐张证明**；接入在 [MandateKey](https://github.com/ledgeroot/mandatekey) 的证据包里 |
 | **第三方独立验证仍要走证据包** | 独立验证器包（零依赖、单文件、断网可跑）尚未发布；目前第三方要验单张收据，需用导出的证据包（含公钥）或直接依赖本库 |
 | **验证是全量的** | `verify` 每次遍历全部收据逐条重算 SHA-256 + Ed25519，无增量、无检查点；`--check-chain` 的 RPC 并发没有上限 |
-| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、129 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
+| **合约测试不在 CI 里** | `.github/workflows/ci.yml` 只跑 typecheck、133 个 TypeScript 测试与 build；`LedgerootAnchor.sol` 的 `forge test` 目前仍只在本地跑 |
 | **没有聚合层** | 全库没有一处 SQL 聚合（无 `GROUP BY` / `SUM` / `COUNT`），也没有对账导出。这是生态位里唯一能收费的那一层，目前**完全不存在** |
 | **ERC-8004 只埋了字段** | `Mandate.agentId` 存在但未接注册表校验 |
 
@@ -328,12 +329,13 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 
 ## 锚定合约
 
-`contracts/src/LedgerootAnchor.sol` —— 全项目唯一合约，**只存 32 字节根 + 回指针 + epoch 计数器**。
+`contracts/src/LedgerootAnchor.sol` —— 全项目唯一合约，**只存 32 字节根 + 回指针 + epoch 计数器 + owner**。
 
-- **权限受控**：`anchor()` 有 `onlyOwner`。开放的 `anchor()` 会让"这个根在链上"只等于"有人往这里锚了东西"——攻击者可以发布伪造根，或顶掉诚实根让有效收据验成 `tampered`。owner 是**锚定钱包**（`LEDGEROOT_PRIVATE_KEY` 推导，或设了 `LEDGEROOT_ANCHOR_KEY` 时取它），不是部署者，因此两把钥匙可以分离。
+- **权限受控**：`anchor()` 有 `onlyOwner`。开放的 `anchor()` 会让"这个根在链上"只等于"有人往这里锚了东西"——攻击者可以发布伪造根，或顶掉诚实根让有效收据验成 `tampered`。owner 是**锚定钱包**（设了 `LEDGEROOT_ANCHOR_KEY` 就取它，否则用 `LEDGEROOT_PRIVATE_KEY`），不是部署者，因此两把钥匙可以分离。
+- **所有权可转移**：`transferOwnership` 让锚定钥匙可以在不重部署的前提下轮换。owner 原先固定在构造函数里，换锚定钱包就意味着重新部署、并让老合约上已锚的根全部落空。用一步而不是"先提名再接受"两步，是因为转错了现任 owner 还能再转回来，而两步握手的中间态会让合约无法锚定。
 - **epoch 由合约拥有**：`lastEpoch` 每次锚定自增，客户端读合约而不是自己记数——否则一个全新的库会把它的第一次锚定标成 "epoch 1"，不管合约已经走到多远。
 - **Merkle 用 RFC 6962 MTH**：叶 `SHA-256(0x00 ‖ d)`、内部节点 `SHA-256(0x01 ‖ L ‖ R)`、按最大 2 的幂切分（不复制奇数末节点）。**域分隔**是第二原像抗性的来源。测试用 RFC 9162 §2.1.2 的栈式算法作独立预言机交叉验证。
-- 部署到 Monad testnet（chainId 10143）。曾用于 demo 的一次部署：`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`（owner `0x055A…A8f7`）——**测试网地址，随时可能重部署，以你的 `.env` 为准**。
+- 部署到 Monad 主网（chainId 143）：`0x958f887f203a08f43fe45ba00a6a4199b9e01b61`，owner 为锚定钱包。它接替了 `0xca08c795357ae8bcee8af592c827d419750fdf84`（owner 是支付密钥）；已锚在那份合约上的根留在那边。更早的测试网部署（`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`）不产生证据。**地址会变——以你自己的 `.env` 为准**。
 
 ---
 
@@ -361,7 +363,7 @@ x402 轨道与本地库**不是一个事务**。Ledgeroot 用两个可选关联�
 |---|---|
 | `LEDGEROOT_DB` | SQLite 数据库路径（默认 `ledgeroot.sqlite`） |
 | `LEDGEROOT_PRIVATE_KEY` | **动钱**的私钥：支付签名。永不出本机 |
-| `LEDGEROOT_ANCHOR_KEY` | **提交锚定**的私钥。未设置时回落 `LEDGEROOT_PRIVATE_KEY`。设置它可让无人值守的锚定循环拿不到动钱的钥匙——合约 `owner` 必须是这把钥匙，而 `LedgerootAnchor` 没有 `transferOwnership`，所以要彻底分离得重新部署 |
+| `LEDGEROOT_ANCHOR_KEY` | **提交锚定**的私钥。未设置时回落 `LEDGEROOT_PRIVATE_KEY`。设置它可让无人值守的锚定循环拿不到动钱的钥匙——它同时是合约的 `owner`，而合约可用 `transferOwnership` 移交所有权，所以轮换它不需要重部署 |
 | `LEDGEROOT_SIGNING_KEY` | **收据签名**密钥（32 字节 hex 种子）。与支付密钥刻意分离。**未设置则收据不签名，验证报 `incomplete`** |
 | `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator 地址（默认 `https://x402-facilitator.molandak.org`，公开、无需 API key） |
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC（默认 `https://testnet-rpc.monad.xyz`） |
@@ -395,7 +397,7 @@ contracts/       LedgerootAnchor（Solidity 0.8.24 + Foundry）
 deploy/          锚定合约部署（链由 LEDGEROOT_CHAIN_ID 选择）
 docs/            架构评估 / 路线图 / 竞品与标准调研 / 商业化方向
 assets/          字标（亮 / 暗两版）
-test/            15 个文件、129 个测试
+test/            15 个文件、133 个测试
 ```
 
 ---

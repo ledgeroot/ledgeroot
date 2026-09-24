@@ -77,9 +77,10 @@ async function runAnchor(services: LedgerootServices, args: string[]): Promise<v
   if (minNewReceipts !== undefined && (!Number.isInteger(minNewReceipts) || minNewReceipts < 1)) {
     throw new Error(`--min-receipts expects a positive integer, got "${minRaw}"`);
   }
+  const force = flags.has("--force");
 
   const once = async () => {
-    console.log(JSON.stringify(await anchor(services, { minNewReceipts }), null, 2));
+    console.log(JSON.stringify(await anchor(services, { minNewReceipts, force }), null, 2));
   };
 
   if (!flags.has("--watch")) {
@@ -122,10 +123,12 @@ Usage:
                                    Offline verification of the receipt chain + anchor
                                    --check-chain also confirms each settlement via RPC
   ledgeroot export [--db <path>]   Export the evidence bundle as JSON
-  ledgeroot anchor [--db <path>] [--watch] [--every <seconds>] [--min-receipts <n>]
+  ledgeroot anchor [--db <path>] [--watch] [--every <seconds>] [--min-receipts <n>] [--force]
                                    Submit the epoch Merkle root on-chain. --watch keeps
                                    anchoring as receipts arrive; a ledger with nothing new
                                    is skipped so no redundant root is ever paid for.
+                                   --force anchors anyway — for re-anchoring onto a new
+                                   contract, where the local record still names the old one.
   ledgeroot buy <url> --mandate <id> [--method GET|POST] [--body <text>]
                                    [--header "name: value"] [--chain <id>] [--intent <text>]
                                    [--task <id>] [--request <id>] [--db <path>]

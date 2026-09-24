@@ -62,6 +62,39 @@ contract LedgerootAnchorTest is Test {
         assertEq(anchor.lastEpoch(), 1);
     }
 
+    function test_TransferOwnershipMovesAnchoringRights() public {
+        address newOwner = makeAddr("newOwner");
+
+        vm.expectEmit(true, true, false, false);
+        emit LedgerootAnchor.OwnershipTransferred(owner, newOwner);
+        vm.prank(owner);
+        anchor.transferOwnership(newOwner);
+        assertEq(anchor.owner(), newOwner);
+
+        // The new owner anchors; the previous one is now an outsider.
+        vm.prank(newOwner);
+        anchor.anchor(bytes32(uint256(1)));
+        assertEq(anchor.lastEpoch(), 1);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(LedgerootAnchor.NotOwner.selector, owner));
+        anchor.anchor(bytes32(uint256(2)));
+    }
+
+    function test_RevertWhen_NonOwnerTransfers() public {
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(LedgerootAnchor.NotOwner.selector, stranger));
+        anchor.transferOwnership(stranger);
+    }
+
+    function test_RevertWhen_TransferredToZeroAddress() public {
+        // A zero owner can never anchor, so the transfer would brick the
+        // contract just as surely as deploying it with no owner would.
+        vm.prank(owner);
+        vm.expectRevert(LedgerootAnchor.ZeroOwner.selector);
+        anchor.transferOwnership(address(0));
+    }
+
     function test_RevertWhen_DeployedWithoutOwner() public {
         vm.expectRevert(LedgerootAnchor.ZeroOwner.selector);
         new LedgerootAnchor(address(0));

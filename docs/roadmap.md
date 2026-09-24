@@ -68,7 +68,7 @@
 | 锚定合约 | `contracts/src/LedgerootAnchor.sol` | ✅ |
 | x402 buyer（策略关口在签名边界）+ facilitator | `src/x402/{buyer,facilitator}.ts` | ✅ |
 | CLI（verify / export / anchor / buy / jwks / serve） | `src/cli.ts` | ✅ |
-| 测试 15 文件 / 129 用例 + Solidity 测试 | `test/`, `contracts/test/` | ✅ |
+| 测试 15 文件 / 133 用例 + Solidity 测试 | `test/`, `contracts/test/` | ✅ |
 | npm 发布 | `package.json`（`v0.8.0`） | ⏳ 待发布（上一版 `v0.7.0`） |
 
 ### 2.2 正确性缺陷（源码级，P0）—— ✅ 8/8 已修

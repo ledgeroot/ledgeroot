@@ -124,6 +124,12 @@ export const anchorInput = {
     .describe(
       "Anchor only when at least this many receipts arrived since the last anchor (default 1). A ledger with nothing new is never re-anchored.",
     ),
+  force: z
+    .boolean()
+    .optional()
+    .describe(
+      "Anchor even when the ledger has not moved — for re-anchoring onto a new contract, where the local record still names the old one.",
+    ),
 };
 export const anchorInputSchema = z.object(anchorInput);
 
@@ -175,7 +181,11 @@ export async function anchor(
   const newReceipts = receipts.length - alreadyCovered;
   const minNewReceipts = input.minNewReceipts ?? 1;
 
-  if (newReceipts < minNewReceipts) {
+  // Skipping is the point of the check, but a contract change makes the local
+  // record stale rather than current: the receipts are unchanged and the root is
+  // the same, yet the contract now configured holds nothing. `force` re-anchors
+  // that state without inventing a payment to move the counter.
+  if (!input.force && newReceipts < minNewReceipts) {
     return {
       anchored: false,
       receiptCount: receipts.length,

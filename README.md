@@ -78,11 +78,13 @@ Then it is all conversation:
 ```bash
 node dist/cli.js verify [--db <path>] [--check-chain]   # offline verification (+ optional chain check)
 node dist/cli.js export [--db <path>]                   # evidence bundle as JSON
-node dist/cli.js anchor [--db <path>] [--watch] [--every <s>] [--min-receipts <n>]
+node dist/cli.js anchor [--db <path>] [--watch] [--every <s>] [--min-receipts <n>] [--force]
                                                         # submit the epoch root on-chain.
                                                         # --watch keeps anchoring as receipts
                                                         # arrive; a ledger with nothing new is
-                                                        # skipped, so no root is re-paid for
+                                                        # skipped, so no root is re-paid for.
+                                                        # --force anchors anyway (after a
+                                                        # contract change, say)
 node dist/cli.js buy <url> --mandate <id> \
   [--method POST] [--body '<json>'] [--chain 143]        # fetch a URL, pay its 402, record the receipt
 node dist/cli.js jwks                                   # the JWKS a third party needs
@@ -313,7 +315,7 @@ The honest section. These are limits of the **current implementation**, not a re
 | Limit | Current state |
 |---|---|
 | **The pay path is still testnet-only** | `X402_NETWORKS` holds two instances (Monad testnet 10143, mainnet 143) and `ledgeroot_buy` chooses between them by `chainId`. **`ledgeroot_pay` does not**: `bootstrap.ts` still hands the facilitator `MONAD_TESTNET_X402` unconditionally, with no environment variable able to move it |
-| **Block time is not a qualified time source** | Anchoring now runs on Monad mainnet (`0xca08c795357ae8bcee8af592c827d419750fdf84`), an improvement on the earlier testnet contract — but a block timestamp is still not an external authority. An RFC 3161 qualified timestamp remains the follow-up |
+| **Block time is not a qualified time source** | Anchoring now runs on Monad mainnet (`0x958f887f203a08f43fe45ba00a6a4199b9e01b61`), an improvement on the earlier testnet contract — but a block timestamp is still not an external authority. An RFC 3161 qualified timestamp remains the follow-up |
 | **MPP is a seam, not an implementation** | `segments.tx.protocol` is an explicit dimension: **an unknown protocol reports `incomplete`** — neither waved through nor wrongly accused. But MPP's field-level shape is undecided, so no payload shape is assumed and no provider exists. Tracked as the top item in the [roadmap](./docs/roadmap.md) |
 | **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
 | **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
@@ -321,7 +323,7 @@ The honest section. These are limits of the **current implementation**, not a re
 | **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
 | **Third-party verification still goes through the bundle** | A standalone verifier package (zero-dependency, single file, runs offline) has not shipped; to verify a single receipt today, a third party needs the exported evidence bundle (which carries the public keys) or this library |
 | **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
-| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 129 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
+| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 133 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
 | **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
 | **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
 
@@ -329,12 +331,13 @@ The honest section. These are limits of the **current implementation**, not a re
 
 ## The anchor contract
 
-`contracts/src/LedgerootAnchor.sol` — the only contract in the project, storing **a 32-byte root, a back-pointer and an epoch counter**, and nothing else.
+`contracts/src/LedgerootAnchor.sol` — the only contract in the project, storing **a 32-byte root, a back-pointer, an epoch counter and the owner**, and nothing else.
 
-- **Owner-gated**: `anchor()` is `onlyOwner`. An open `anchor()` reduces "this root is on chain" to "somebody anchored something here" — an attacker could publish a forged root, or displace the honest one so valid receipts verify as `tampered`. The owner is the **anchoring wallet** (derived from `LEDGEROOT_PRIVATE_KEY`, or `LEDGEROOT_ANCHOR_KEY` when set), not the deployer, so the two keys can be separated.
+- **Owner-gated**: `anchor()` is `onlyOwner`. An open `anchor()` reduces "this root is on chain" to "somebody anchored something here" — an attacker could publish a forged root, or displace the honest one so valid receipts verify as `tampered`. The owner is the **anchoring wallet** (derived from `LEDGEROOT_ANCHOR_KEY`, or `LEDGEROOT_PRIVATE_KEY` when unset), not the deployer, so the two keys can be separated.
+- **Ownership is transferable**: `transferOwnership` lets the anchoring key be rotated without redeploying. While the owner was fixed at construction, replacing the anchoring wallet meant deploying again and orphaning every root on the old contract. It is one step rather than an accept-then-transfer handshake because a mistaken transfer is recoverable by the current owner, whereas a two-step one leaves the contract unable to anchor in between.
 - **The contract owns the epoch**: `lastEpoch` increments on every anchor, and clients read it from the contract instead of counting locally — otherwise a fresh database would label its first anchor "epoch 1" no matter how far the contract has already run.
 - **RFC 6962 MTH for Merkle**: leaves are `SHA-256(0x00 ‖ d)`, internal nodes `SHA-256(0x01 ‖ L ‖ R)`, split at the largest power of two below n (no duplicating an odd trailing node). **Domain separation** is what buys second-preimage resistance. Tests cross-check against the stack-based algorithm in RFC 9162 §2.1.2 as an independent oracle.
-- Deployed to Monad testnet (chainId 10143). One deployment used for demos: `0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30` (owner `0x055A…A8f7`) — **a testnet address that may be redeployed at any time; trust your own `.env`**.
+- Deployed to Monad mainnet (chainId 143): `0x958f887f203a08f43fe45ba00a6a4199b9e01b61`, owned by the anchoring wallet. It replaced `0xca08c795357ae8bcee8af592c827d419750fdf84`, whose owner was the payment key; the roots anchored there stay on that contract. An earlier testnet deployment (`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`) produces no evidence. **Addresses change — trust your own `.env`**.
 
 ---
 
@@ -362,7 +365,7 @@ The honest section. These are limits of the **current implementation**, not a re
 |---|---|
 | `LEDGEROOT_DB` | SQLite database path (defaults to `ledgeroot.sqlite`) |
 | `LEDGEROOT_PRIVATE_KEY` | The key that **moves money**: payment signing. Never leaves the machine |
-| `LEDGEROOT_ANCHOR_KEY` | The key that **submits anchors**. Falls back to `LEDGEROOT_PRIVATE_KEY`. Set it to keep the unattended anchor loop off the key that moves money — the contract's `owner` must be this key, and `LedgerootAnchor` has no `transferOwnership`, so full separation takes a fresh deployment |
+| `LEDGEROOT_ANCHOR_KEY` | The key that **submits anchors**. Falls back to `LEDGEROOT_PRIVATE_KEY`. Set it to keep the unattended anchor loop off the key that moves money — it is also the contract's `owner`, and the contract can pass ownership on with `transferOwnership`, so rotating it needs no redeploy |
 | `LEDGEROOT_SIGNING_KEY` | The **receipt signing** key (32-byte hex seed), deliberately separate from the payment key. **If unset, receipts are unsigned and verification reports `incomplete`** |
 | `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator endpoint (defaults to `https://x402-facilitator.molandak.org` — public, no API key) |
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC (defaults to `https://testnet-rpc.monad.xyz`) |
@@ -396,7 +399,7 @@ contracts/       LedgerootAnchor (Solidity 0.8.24 + Foundry)
 deploy/          anchor deployment (chain chosen by LEDGEROOT_CHAIN_ID)
 docs/            architecture review / roadmap / competitor and standards research / commercialization
 assets/          logo lockups (light + dark)
-test/            129 tests across 15 files
+test/            133 tests across 15 files
 ```
 
 ---

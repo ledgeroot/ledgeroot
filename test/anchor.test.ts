@@ -160,6 +160,38 @@ describe("anchor flow", () => {
     store.close();
   });
 
+  it("re-anchors an unchanged ledger when forced", async () => {
+    const store = new LedgerootStore({ path: DB });
+    store.appendReceipt(denied("first"));
+
+    let epoch = 1;
+    const submitted: string[] = [];
+    const anchorer = {
+      enabled: true,
+      anchor: async (root: string) => {
+        submitted.push(root);
+        return "0xfaketx";
+      },
+      currentEpoch: async () => epoch,
+    };
+    const services = { store, anchorer } as unknown as LedgerootServices;
+
+    await anchor(services);
+    expect(submitted).toHaveLength(1);
+
+    // Switching anchor contracts leaves the local record naming the old one:
+    // the receipts and the root are unchanged, so only a forced run puts them
+    // on the contract now configured.
+    epoch = 2;
+    expect(await anchor(services, { force: true })).toMatchObject({
+      anchored: true,
+      newReceipts: 0,
+    });
+    expect(submitted).toHaveLength(2);
+
+    store.close();
+  });
+
   it("does not anchor an empty ledger", async () => {
     const store = new LedgerootStore({ path: DB });
     const submitted: string[] = [];

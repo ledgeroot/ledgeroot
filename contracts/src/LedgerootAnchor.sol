@@ -26,10 +26,14 @@ contract LedgerootAnchor {
 
     event Anchored(uint256 indexed epoch, bytes32 root, bytes32 previousRoot);
 
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
     /// @notice Thrown when a caller other than `owner` tries to anchor.
     error NotOwner(address caller);
 
-    /// @notice Thrown when the contract would be deployed with no owner.
+    /// @notice Thrown when the contract would be left with no owner — at
+    ///         deployment, or by a transfer to the zero address. Either way
+    ///         nothing could ever be anchored again.
     error ZeroOwner();
 
     constructor(address initialOwner) {
@@ -51,5 +55,19 @@ contract LedgerootAnchor {
             ++lastEpoch;
         }
         emit Anchored(lastEpoch, root, previousRoot);
+    }
+
+    /// @notice Hand ownership to `newOwner`.
+    /// @dev Rotation is why this exists: with the owner fixed at construction,
+    ///      the only way to change the wallet that anchors is to deploy again,
+    ///      which orphans every root already on the old contract. One step is
+    ///      deliberate — the caller is the current owner, so a mistake is
+    ///      recoverable by transferring again, and a two-step handshake would
+    ///      leave the contract unable to anchor between the two calls.
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroOwner();
+        address previousOwner = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(previousOwner, newOwner);
     }
 }
