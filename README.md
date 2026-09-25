@@ -200,7 +200,7 @@ A failure *after* the gate — a transport error, or a seller that asks for paym
 
 The niche is guaranteed by **fee structure**, not by technical superiority: a $0.30 + 2.9% card fee spread across a $0.005 payment is 6000% — **physically impossible**. That is why x402 exists, and why we **don't do large-value payments**. Large payments come with invoices, contracts and refund flows, and that ground belongs to Shopify, Stripe, Visa TAP and Mastercard.
 
-> ⚠️ Fee structure excludes anyone taking a **percentage**. It does not exclude a cloud vendor that bills by load and treats payment as a platform feature — see [competitors.md](./docs/competitors.md) §二.
+> ⚠️ Fee structure excludes anyone taking a **percentage**. It does not exclude a cloud vendor that bills by load and treats payment as a platform feature.
 
 Within that niche Ledgeroot does exactly three things:
 
@@ -460,13 +460,7 @@ New to the codebase? `scripts/demo.ts` walks the whole loop in one file, and `te
 |---|---|
 | [README.md](./docs/README.md) | Index and reading order for the whole doc set |
 | [architecture.md](./docs/architecture.md) | Source-level architecture review: what is done right, scaling debt, the zero-export vs aggregation tension, chain config and the protocol seam |
-| [roadmap.md](./docs/roadmap.md) | The action plan: P0 correctness (closed) → P1 differentiation → P2 visibility → P3 credibility; gap list N1–N15 and open decisions Q1–Q17 |
-| [commercialization.md](./docs/commercialization.md) | The niche, four trade-offs, the commercial layering, and what we must **not** do now |
-| [landscape.md](./docs/landscape.md) | Threat taxonomy (carriers / distribution monopolists / direct competitors / the regulatory clock), commoditisation half-lives, and the monitoring triggers |
-| [competitors.md](./docs/competitors.md) | Deep dives on Vaara, AWS AgentCore payments, TrustBench, and Semantica (adjacent) |
-| [standards.md](./docs/standards.md) | Academic and standards landscape: OAP, Vaara Receipt, the IETF drafts, and the case for supporting x402 and MPP side by side |
-| [tokenized-equities.md](./docs/tokenized-equities.md) | The second vertical — Uniswap permissioned pools × tokenized equities — and the two SEC proposal tracks |
-| [sec-comment-s7-2026-30.md](./docs/sec-comment-s7-2026-30.md) | Draft comment letter on SEC File S7-2026-30 (marked DRAFT; not to be filed as-is) |
+| [roadmap.md](./docs/roadmap.md) | The action plan: P0 correctness (closed) → P1 differentiation → P2 visibility → P3 credibility; gap list N1–N15 and open decisions Q1–Q10 |
 
 ---
 
@@ -480,7 +474,7 @@ MIT © 2026 Ledgeroot
 
 **[Verify it yourself — don't take our word for it.](#get-started)**
 
-⭐ **[Star it](https://github.com/ledgeroot/ledgeroot)** · 📖 **[中文 README](./README.zh-CN.md)** · 🗺️ **[Roadmap](./docs/roadmap.md)** · 🛡️ **[Landscape](./docs/landscape.md)**
+⭐ **[Star it](https://github.com/ledgeroot/ledgeroot)** · 📖 **[中文 README](./README.zh-CN.md)** · 🗺️ **[Roadmap](./docs/roadmap.md)**
 
 <sub>MIT · no SaaS · no telemetry · the private key never leaves the machine</sub>
 

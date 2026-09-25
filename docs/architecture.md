@@ -2,7 +2,7 @@
 
 > 定位：对当前源码的工程评估——已做对的、规模层面的债、架构张力、链配置与协议接缝
 > 状态：2026-09-23（对照 `v0.8.0` 源码复核）
-> 关联：[roadmap.md](./roadmap.md)（计划） · [commercialization.md](./commercialization.md)（生态位） · [standards.md](./standards.md)（协议层） · [competitors.md](./competitors.md)
+> 关联：[roadmap.md](./roadmap.md)（计划）
 > 评估方法：源码通读（`ledgeroot/src/**`、`mandatekey/app/api/**` 与组件、`contracts/src/LedgerootAnchor.sol`）+ 关键路径逐行复核
 
 **核心判断：架构没有做错，是适用范围不对了。**
@@ -86,7 +86,7 @@
 
 **数据模型没有租户/组织/舰队字段**——`agent_id` / `mandate_id` 不是隔离键。MandateKey 六个路由都是同一个模式：一个路径 = 一个部署。**安全后果**：任何能读到这个库或导出包的人，都会看到全部 fleet 的原始收据与 intent 文本。
 
-> 📌 **这一条是刻意的**（`commercialization.md` 明写"现在硬编码单用户单库，不要为了企业感加多租户"）。**本评估不推翻该决定，只标出代价**：舰队形态在存储层没有基础。
+> 📌 **这一条是刻意的**——刻意保持单用户单库，不为了"企业感"提前加多租户。**本评估不推翻该决定，只标出代价**：舰队形态在存储层没有基础。
 
 ---
 

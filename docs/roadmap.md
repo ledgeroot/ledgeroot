@@ -1,12 +1,10 @@
 # 行动规划
 
 > 定位：Ledgeroot（engine）+ MandateKey（dashboard）的行动计划与状态
-> 状态：2026-09-22
-> 关联：[architecture.md](./architecture.md) · [commercialization.md](./commercialization.md) · [landscape.md](./landscape.md) · [standards.md](./standards.md) · [competitors.md](./competitors.md) · [tokenized-equities.md](./tokenized-equities.md)
+> 状态：2026-09-24
+> 关联：[architecture.md](./architecture.md)
 > 排序原则：**先正确性，再差异化，再可见性，最后公信力**——前者是后者的前提
 >商业化定位：**开源内核 + 企业控制面 + 对账与聚合层**；本期不启动商业化，只做架构留缝
-
-> 📌 **定期复核的监控触发条件统一在 [landscape.md](./landscape.md) §八**，本文不再重复。
 
 ---
 
@@ -29,7 +27,7 @@
 
 ## 一、规划依据（前提）
 
-**0. 🎯 生态位**：**链上稳定币 × agent 小额 402 支付**，**明确不做大额**。理由不是打不过 Shopify/Stripe，是**卡组织费率结构**（$0.30 + 2.9%）在 $0.005 上物理不可行。完整论述见 [commercialization.md](./commercialization.md) §零。
+**0. 🎯 生态位**：**链上稳定币 × agent 小额 402 支付**，**明确不做大额**。理由不是打不过 Shopify/Stripe，是**卡组织费率结构**（$0.30 + 2.9%）在 $0.005 上物理不可行。
 
 > ⚠️ **这一条改变了下面的读法**：**买方**是财务 / AP 对账（合规在小额场景暂不在场）；**产品**是**账**（聚合与对账）不是收据（收据是原料）；**三根支柱的意义变了**（授权更重要、完整性是为聚合数字的可信度、零外泄是为保护支付流量这个商业情报）。
 
@@ -44,7 +42,7 @@
 9. **"transaction authorization" 已是学术通用术语**（SoK 2604.15367 的 D2 维度）。
 10. ⚠️ **这些不是"学术界"，是厂商在售产品**（APort $499/$4,990 月费；Vaara AGPL + 付费 pilot）。
 11. ⚠️ **牵引排序**：**Vaara ≈2,164/周**，APort 614，BlueTier 111。
-12. ⚠️ **AWS 把三根支柱的表述面全占了**（payment session = mandate、deterministic 基础设施层限额检查 = 策略引擎、Observability 自称 "payment audit trails"），且**已实现 MPP 与 x402 `upto`**。它同时推翻了护城河论证的一半——**费率结构排除"抽成型"对手，不排除"把支付当平台功能送"的云厂商**。见 [competitors.md](./competitors.md) §二。
+12. ⚠️ **AWS 把三根支柱的表述面全占了**（payment session = mandate、deterministic 基础设施层限额检查 = 策略引擎、Observability 自称 "payment audit trails"），且**已实现 MPP 与 x402 `upto`**。它同时推翻了护城河论证的一半——**费率结构排除"抽成型"对手，不排除"把支付当平台功能送"的云厂商**。
 
 **结论**：Ledgeroot **不能靠"我们有锚定收据"取胜，不能靠"我们证明没有遗漏"取胜，也不能靠"我们本地优先"取胜**——三者都已被占据。**唯一剩下的一格是"支付专用的用户签名授权 + 零出境"**。同时必须承认：**对手的发布节奏比我们快一个数量级**，排序原则（正确性 → 差异化 → 可见性 → 公信力）在无订单但有标准位争夺时需重排。
 
@@ -143,7 +141,7 @@
 | 缺口最坏情况 | `maxClass` | ❌ |
 | 独立 checker | ✅ 公开向量 + 独立脚本 | ❌ |
 
-→ **动作：按 Vaara §6.4 实现，而不是继续自研。** 见 N6–N9 与 [standards.md](./standards.md) §七。
+→ **动作：按 Vaara §6.4 实现，而不是继续自研。** 见 N6–N9。
 
 ### 支柱 3（修订）：证据主权 —— ⚠️ **不再独有**
 
@@ -159,7 +157,7 @@ Vaara 已做到**且更彻底**（自托管 + 无 SaaS + 断网单文件验证 +
 
 ### 词汇纪律（必须遵守）
 
-见 [landscape.md](./landscape.md) §七"用词警告"。要点：**不用"预行动闸门"**（改用"用户签名的确定性强制"）、**不用"完整性证明/本地优先"做独有卖点**、**不对"合规收据"泛化**。
+要点：**不用"预行动闸门"**（改用"用户签名的确定性强制"）、**不用"完整性证明/本地优先"做独有卖点**、**不对"合规收据"泛化**。
 
 ---
 
@@ -224,12 +222,12 @@ Vaara 已做到**且更彻底**（自托管 + 无 SaaS + 断网单文件验证 +
 
 ### P1-6. 对账与聚合层 ⭐ 生态位的产品本体
 
-> 依据 [architecture.md](./architecture.md) §B1 与 [commercialization.md](./commercialization.md) §三 §四。**这是生态位里唯一能收费的那一层，目前完全不存在。**
+> 依据 [architecture.md](./architecture.md) §B1。**这是生态位里唯一能收费的那一层，目前完全不存在。**
 
 **现状**：全库**没有一处 SQL 聚合**（无 `GROUP BY` / `SUM` / `COUNT`）。唯一的"按维度分组"是 `timeline.tsx` 对已全量加载数组做的客户端 `Map` 分组。**无异常/趋势检测，无 ERP/对账导出。**
 
 - **做什么**：按对手方 / agent / 任务 / 时间桶的**聚合查询**；**可下钻**；**对账导出**（能进 ERP 的数据结构）；**异常视图**（谁在涨、哪条策略拦得最多）。
-- **⭐ 第一批交付物是三个「支付查询原语」**（依据 [competitors.md](./competitors.md) §四·3）：
+- **⭐ 第一批交付物是三个「支付查询原语」**：
 
   | 原语 | 现在的替代 | 对 agent 的直接价值 |
   |---|---|---|
@@ -301,11 +299,11 @@ Vaara 已做到**且更彻底**（自托管 + 无 SaaS + 断网单文件验证 +
 | 不宣称"所有 agent 都必须合规" | EU AI Act 第 12 条只覆盖高风险系统 |
 | 不做按调用收费 | 需在请求路径里，与本地优先冲突 |
 | 不做多租户 auth / billing | 市场未验证，会拖垮当前规模 |
-| 不现在启动商业化 | 见 [commercialization.md](./commercialization.md) §八 启动信号 |
+| 不现在启动商业化 | 免费层的留缝先做完，等真实企业信号 |
 | **不做控制面 / 看板去对标 AgentCore / CloudWatch** | 没有渠道，且那是它的主场 |
 | **不做钱包 / 入金 / 托管** | Coinbase / Privy / AWS 已做成零摩擦 |
 | **不追框架插件矩阵** | AWS 的主场；守住 MCP 宿主这一个入口 |
-| 不做绑死单一交易场所的产品 | 见 [tokenized-equities.md](./tokenized-equities.md) §九 |
+| **不做 agent 间（A2A）支付轨道 / 多 agent 编排器** | 轨道层 + 平台层；A2A 的授权机制未指定、OAP 已提案为扩展——**接入，不自建**。见 §十 Q10 |
 | 不做按交易金额比例抽成 | 会改变监管主体身份 |
 
 ---
@@ -334,33 +332,20 @@ Vaara 已做到**且更彻底**（自托管 + 无 SaaS + 断网单文件验证 +
 | **Q7** 🎯 | **零外泄 vs 聚合的边界在哪里？**（[architecture.md](./architecture.md) §三） | ⚠️ **决定控制面 schema 与 P1-6 的数据模型** | **待定——必须在 P1-6 之前决定** |
 | **Q8** | 现在上多写 / 多租户，还是先做单 agent？ | ⚠️ 决定 `seq` 分配与访问层要不要现在重做 | 待定，**越晚越贵** |
 | **Q9** 🎯 | **MPP Sessions 下的 epoch 边界语义是什么？**（N:1 结算 vs 按 `receiptCount` 切片） | ⚠️ 决定锚定与完整性证明在 MPP 下是否成立 | **待定——必须在 P1-8 的 A1 之前定** |
-| **Q10** | 停牌状态源取哪一类？（官方 feed / 交易所 API / 多源共识 / 乐观挑战） | 决定 `IHaltOracle` 设计与 grant 申请的技术分量 | 待定 |
-| **Q11** | 代币化股票垂直第一份收费交付物的目标格式？ | 需与真实 transfer agent / TSV 合规人员对话后定 | 待定 |
-| **Q12** | mandate 的 issuer 是否支持"证券发行人持有撤销权"？ | 决定该垂直的核心设计，影响条件③ | 待定 |
-| **Q13** | 是否为代币化股票垂直设独立仓库（如 `ledgeroot-tsv`）？ | 影响是否污染主仓库的标准位叙事 | 待定 |
-| **Q14** | SEC 评论文件（2026-11-03）是否单独署名？ | 决定这条线索的归属与可引用性 | 待定（**有时限**） |
-| **Q15** | 产品主线取名册层（TA）还是交易层（TSV），还是跨场所的名册 + 证据层？ | 决定架构、买方、是否绑死 Uniswap | 待定 |
-| **Q16** | 是否承认"纯链上名册不成立"，把链下受控副本纳入架构？ | 直接决定名册层架构 | 待定 |
-| **Q17** | 是否承担"Tokenization Agent"这一尚未定义的角色？ | 决定成为被点名的服务商类别还是工具供应商 | 待定 |
+| **Q10** 🎯 | **是否把"委派链（用户 → agent → 子 agent 的衰减授权）"纳入 mandate 数据模型？** | ⚠️ 决定 `Mandate` 是否加 `parentMandateId`、撤销级联与 `taskId` 树化 | **待定——触发条件：出现真实编排器在跑小额 402，且要求子 agent 的花费能回溯到用户签发的父授权、并可由第三方独立验证（现有 A2A / OAP 机制答不了）** |
 
 > 🔴 **Q7 是最关键的未决项**：产品是"跨 fleet 的账"，架构是"每 agent 本地一个 SQLite"——跨 fleet 聚合需要把 N 个 agent 的数字汇到一处，这与"零外泄"存在张力。推荐**"每 agent 自算 rollup + 锚定链接"**，它同时保住零外泄与可验证性。
 >
 > 🔴 **Q8 的代价随时间上升**：`seq` 分配与单写进程在单 agent 下无害，在舰队下会直接崩。
+>
+> 🎯 **Q10 的边界（2026-09-24）**：要做的是委派链的**授权与证据**模型——**子 ⊆ 父**（限额 / 白名单 / payTo 取交集，到期 ≤ 父）、**撤销级联**（撤父则子全部拒付并留痕）、`taskId` 树化，以及验证器新增一条：**每笔子支付的授权链必须终结于一张用户签名的 mandate**。**不做**的是"agent 互相派任务的**支付轨道**"（见 §八 非目标）。判据：出现"子 agent 的花费必须能回溯到用户签发的父授权、且可被第三方独立验证"的真实需求（合规 / 对账驱动），而不是"想让 agent 之间能互相转账"。排序上在 P1 之后——先 P0 → D1b / 协议接缝 → N7 独立验证器 → N9 互操作。
 
 ---
 
-## 附：与其他文档的对应关系
+## 附：与 architecture.md 的对应关系
 
 | 本规划条目 | 来源 |
 |---|---|
-| 生态位（§一 第 0 条） | [commercialization.md](./commercialization.md) §零 |
-| P0-1 ~ P0-8 | [landscape.md](./landscape.md) §二（x402 草案 A4 / 测试 3.2.4 / SI-2） |
 | P0-9 / P0-10 | [architecture.md](./architecture.md) §一 |
 | P1-5（索引）/ P1-6（聚合）/ P1-7（增量验证） | [architecture.md](./architecture.md) §B1 §B2 §C1 |
 | Q7 / Q8 | [architecture.md](./architecture.md) §三 §B3 §B4 |
-| 支柱 1/2/3 修订 | [standards.md](./standards.md) §六、[competitors.md](./competitors.md) |
-| N1–N12 | [standards.md](./standards.md)、[competitors.md](./competitors.md) §一 |
-| N13–N15 / P1-8 / Q9 | [competitors.md](./competitors.md) §二 |
-| P1-6 查询原语 / P2-5 / P3-4 | [competitors.md](./competitors.md) §四（Semantica） |
-| Q10–Q17 / 非目标（交易场所、抽成） | [tokenized-equities.md](./tokenized-equities.md) |
-| 监控触发条件 | [landscape.md](./landscape.md) §八 |
