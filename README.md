@@ -202,6 +202,8 @@ The niche is guaranteed by **fee structure**, not by technical superiority: a $0
 
 > ⚠️ Fee structure excludes anyone taking a **percentage**. It does not exclude a cloud vendor that bills by load and treats payment as a platform feature.
 
+> 📌 **Two axes, not one.** Amount is the first — card fees make a $0.005 payment impossible, so we don't do large-value. Acceptance is the second, and it is the sharper one: **consumer-facing agent payments already run on Shop Pay / Stripe Link with one-time tokenized credentials — stablecoins never enter that flow, and what blocks them there is merchant acceptance, not fees.** Stablecoins' ground is the end the card networks *won't* go: **machine-to-machine, the cross-border long tail, API-level micropayments.** Two scenarios, two stories — don't mix them, and don't reach for the fee argument to explain the consumer one.
+
 Within that niche Ledgeroot does exactly three things:
 
 | Does | Doesn't |
