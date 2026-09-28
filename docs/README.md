@@ -1,10 +1,12 @@
 # 文档索引
 
-> Ledgeroot 是 agent x402 支付的证据引擎：授权（mandate）→ 执行前 fail-closed 校验 → 六段收据 → 哈希链 → 链上锚定 → 离线三态验证。本文档集记录它的**架构现状与行动计划**。
+> Ledgeroot 是 agent x402 支付的证据引擎：授权（mandate）→ 执行前 fail-closed 校验 → 六段收据 → 哈希链 → 链上锚定 → 离线三态验证。本文档集记录它的**架构现状、行动计划与演示脚本**。
 
 ## 阅读顺序
 
 **刚接触项目** → [architecture.md](./architecture.md)（现状与限制）→ [roadmap.md](./roadmap.md)（在做什么）
+
+**要录像 / 现场演示** → [demo-video-script.md](./demo-video-script.md)（3 分钟脚本：英文口播 + 中英字幕 + 拍摄前准备）
 
 ## 文档
 
@@ -12,6 +14,7 @@
 |---|---|---|
 | **[architecture.md](./architecture.md)** | 当前源码的工程评估：已做对的、规模层面的债、架构张力、链配置与协议接缝 | 改代码前 |
 | **[roadmap.md](./roadmap.md)** | 行动规划：P0 正确性（已完成）、P1 差异化、P2 可见性、P3 公信力；N 系列差距、Q 系列待决 | 决定优先级时 |
+| **[demo-video-script.md](./demo-video-script.md)** | 3 分钟演示视频脚本：七个分镜、英文口播（标词数与时长）、中英双语字幕、拍摄前准备与措辞纪律 | 录像或现场演示前 |
 
 ## 约定
 
