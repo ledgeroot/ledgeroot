@@ -24,7 +24,26 @@
 
 ---
 
-## See it block a prompt-injected payment
+## Contents
+
+- [What it is](#what-it-is)
+- [Why Ledgeroot](#why-ledgeroot)
+- [Get started](#get-started)
+- [How a payment happens](#how-a-payment-happens)
+- [Architecture](#architecture)
+- [Where it sits](#where-it-sits)
+- [Reference](#reference)
+- [Known limits](#known-limits)
+- [Contributing](#contributing)
+- [Design and research documents](#design-and-research-documents)
+
+---
+
+## What it is
+
+Ledgeroot authorizes what an agent may spend, checks every payment against that authorization **before** signing it — fail-closed — and records a signed six-segment receipt whether the payment went through or was blocked. A third party verifies the whole chain offline, with nothing installed and nobody to call.
+
+### See it block a prompt-injected payment
 
 ```text
 $ LEDGEROOT_DRY_RUN=true npm run demo
@@ -40,7 +59,21 @@ $ LEDGEROOT_DRY_RUN=true npm run demo
 
 > Abridged from a real run; steps 4 and 6 are the receipts' `reason` strings verbatim. **A denial is a receipt too** — steps 4 and 6 carry their own signed entries, which is why the ledger ends at three receipts and still verifies clean.
 
-No wallet, no USDC, no network, no account. That is the whole loop: authorize → constrain → pay → deny → revoke → verify offline.
+No wallet, no USDC, no network, no account. That is the whole loop: **authorize → constrain → pay → deny → revoke → verify offline.**
+
+---
+
+## Why Ledgeroot
+
+- **Fail-closed by construction.** Every policy runs; the first denial stops the payment and is itself recorded. There is no path where a check is skipped and the payment proceeds.
+- **Verifiable, not just logged.** Receipts are Ed25519-signed, hash-chained and committed to an epoch Merkle root on-chain. A third party verifies them offline — no call home, no vendor in the loop.
+- **Denials are evidence.** A blocked attempt produces the same signed receipt a successful one does. That is the only place a blocked agent task is visible.
+- **It buys, not just settles.** `ledgeroot_buy` fetches the resource itself, so the quote it judges is the one the seller actually sent, and segment 6 is the body it actually received.
+- **One key moves money, another attests.** The signing key and the payment key deliberately do not fall back to each other.
+- **Money never touches a float.** Six-decimal bigint arithmetic throughout.
+- **Honest about what it does not know.** Missing evidence reports `incomplete`; it is never reported as tampering, and never waved through.
+- **Audit trail proves execution, not just intent.** The consistency view re-checks paid receipts against the mandate that authorized them.
+- **MIT, local SQLite, no SaaS, no telemetry.** Nothing leaves the machine.
 
 ---
 
@@ -53,6 +86,8 @@ npm install
 npm run build
 LEDGEROOT_DRY_RUN=true npm run demo
 ```
+
+No wallet, no USDC, no network, no account.
 
 ### 2. Add it to Claude Code
 
@@ -70,7 +105,7 @@ Check the server came up before expecting a tool to run — `Environment` should
 claude mcp list     # ledgeroot: node dist/cli.js serve - ✔ Connected
 ```
 
-### How to use it
+### 3. What using it looks like
 
 Once registered, it is all conversation — natural-language parsing is the host's job:
 
@@ -81,7 +116,7 @@ Once registered, it is all conversation — natural-language parsing is the host
 
 > The private key is passed via `--env` and stays on the machine, and the tools are structured and deterministic — nothing is guessed at the payment boundary.
 
-#### The same loop, headless
+### 4. The same loop, headless
 
 A scripted demo or CI drives it with one prompt. Mandates expire, so sign a fresh one first — `npm run mandate:demo` writes the `demo-mandate-agent` authorization the prompt below spends under:
 
@@ -104,7 +139,7 @@ The agent settled **0.001 USDC** to `agent402.tools`, the receipt records `chain
 node dist/cli.js verify --db ./ledgeroot.sqlite --check-chain
 ```
 
-> ⚠️ **Anchoring is not automatic.** The payment path writes the receipt; putting its root on chain is a separate, explicit step — `ledgeroot anchor`, the `ledgeroot_anchor` tool, or `anchor --watch`. It is kept off the pay path deliberately, so the two never share a nonce. A receipt written after the last anchor is simply outside that epoch's inclusion proofs; `verify` still reports `verified`, because an anchor covers the receipts that existed when it was submitted.
+> ⚠️ **Anchoring is not automatic.** The payment path writes the receipt; putting its root on chain is a separate, explicit step — `ledgeroot anchor`, the `ledgeroot_anchor` tool, or `anchor --watch`. It is kept off the pay path deliberately, so the two never share a nonce. See [Anchor boundaries](#anchor-boundaries) for what an epoch does and does not cover.
 
 ### CLI
 
@@ -150,7 +185,9 @@ npm run anchor -- --db ./ledgeroot.sqlite
 
 ---
 
-## Buying a resource (the 402 flow)
+## How a payment happens
+
+### Buying a resource (the 402 flow)
 
 `ledgeroot_pay` settles a payment whose quote the caller already holds — because the host did the 402 handshake somewhere else, where the audit trail cannot see it. `ledgeroot_buy` goes and gets the quote itself:
 
@@ -178,60 +215,101 @@ A failure *after* the gate — a transport error, or a seller that asks for paym
 
 > ⚠️ **The sellers we buy from are mainnet-only.** agent402's live 402 offers `eip155:143` (Monad mainnet) among twelve chains, and **nothing on testnet**. `ledgeroot_buy` therefore defaults to `chainId: 143`, and a real purchase is a real — if tiny — payment.
 
----
+### The six-segment receipt
 
-## Why Ledgeroot?
+`intent → mandate → plan → call → transaction → delivery`
 
-- **Fail-closed by construction.** Every policy runs; the first denial stops the payment and is itself recorded. There is no path where a check is skipped and the payment proceeds.
-- **Verifiable, not just logged.** Receipts are Ed25519-signed, hash-chained and committed to an epoch Merkle root on-chain. A third party verifies them offline — no call home, no vendor in the loop.
-- **Denials are evidence.** A blocked attempt produces the same signed receipt a successful one does. That is the only place a blocked agent task is visible.
-- **It buys, not just settles.** `ledgeroot_buy` fetches the resource itself, so the quote it judges is the one the seller actually sent, and segment 6 is the body it actually received.
-- **One key moves money, another attests.** The signing key and the payment key deliberately do not fall back to each other.
-- **Money never touches a float.** Six-decimal bigint arithmetic throughout.
-- **Honest about what it does not know.** Missing evidence reports `incomplete`; it is never reported as tampering, and never waved through.
-- **Audit trail proves execution, not just intent.** The consistency view re-checks paid receipts against the mandate that authorized them.
-- **MIT, local SQLite, no SaaS, no telemetry.** Nothing leaves the machine.
+| Segment | What goes in | Where it lands |
+|---|---|---|
+| 1. **Intent** | a natural-language statement of why the agent is paying | `segments.intent.text` |
+| 2. **Mandate** | the authorization covering this payment + the **policy intersection** (which policies the mandate actually constrained) | `segments.mandate` |
+| 3. **Plan** | the 402 quote **exactly as the seller sent it**, plus its canonical hash — `payTo` and the quoted amount are read from here, so what policy judged is what the receipt records | `segments.plan` |
+| 4. **Call** | **the verdict of every policy**, both the passing and the denying ones | `segments.call.policyResults` |
+| 5. **Transaction** | settlement protocol + `txHash` + `chainId` + `payer` | `segments.tx` |
+| 6. **Delivery** | **the hash and byte size** of the response body — never the body itself | `segments.delivery` |
 
----
+A few things are deliberate:
 
-## Where it sits
+- **Segments are interlocked by RFC 8785 canonical hashing.** Each receipt carries a `prevHash` pointing back at the previous receipt's `receiptHash`. The log is append-only and cannot be updated in place — a receipt's `id` *is* the canonical hash of its content, so changing one byte makes it a different receipt.
+- **Every receipt carries a detached Ed25519 signature** with a JWS-style `protected` header. The signature covers `{payload, protected}`, so `alg` and `kid` sit **inside the signed bytes** and cannot be swapped after the fact. `kid` is the public key's **RFC 7638 JWK thumbprint** — the identifier is derived from the key itself, so it needs no registry and cannot drift away from the key.
+- **The hash chain proves the content was not changed; the signature proves who made the statement.** They are independent: tamper with the content and re-hash it, and the chain still verifies — only the signature catches it.
+- Public keys are published as **JWKS** (`npx ledgeroot jwks`) and shipped inside the evidence bundle, so a third party can verify signatures **without calling home**.
+- **Segment 6 can only be reported by the caller** (`responseBody` on `ledgeroot_pay`, or the bought response in `ledgeroot_buy`). Ledgeroot settles the payment but **never fetches the resource** on the pay path — only the agent sees the response body, so only the caller can supply its hash.
+- **Segment 3 is checkable, not just descriptive.** The quote is stored whole and committed to by hash, so a verifier recomputes `canonicalHash(segments.plan.quote)` and compares. A quote swapped after signing fails that check even if the receipt is re-hashed and re-signed — which is exactly the edit an issuer could otherwise make quietly. `payTo` and the quoted amount come from the same object, so a caller cannot pass a benign `payTo` alongside a quote pointing somewhere else.
 
-**Niche: on-chain stablecoins × agent micro-402 payments** (unit price $0.001–$0.05, on the order of a million payments a month).
+### Tri-state verification (offline first)
 
-The niche is guaranteed by **fee structure**, not by technical superiority: a $0.30 + 2.9% card fee spread across a $0.005 payment is 6000% — **physically impossible**. That is why x402 exists, and why we **don't do large-value payments**. Large payments come with invoices, contracts and refund flows, and that ground belongs to Shopify, Stripe, Visa TAP and Mastercard.
+Verification **depends on no server** — `ledgeroot verify` reads the local database and recomputes.
 
-> ⚠️ Fee structure excludes anyone taking a **percentage**. It does not exclude a cloud vendor that bills by load and treats payment as a platform feature.
-
-> 📌 **Two axes, not one.** Amount is the first — card fees make a $0.005 payment impossible, so we don't do large-value. Acceptance is the second, and it is the sharper one: **consumer-facing agent payments already run on Shop Pay / Stripe Link with one-time tokenized credentials — stablecoins never enter that flow, and what blocks them there is merchant acceptance, not fees.** Stablecoins' ground is the end the card networks *won't* go: **machine-to-machine, the cross-border long tail, API-level micropayments.** Two scenarios, two stories — don't mix them, and don't reach for the fee argument to explain the consumer one.
-
-Within that niche Ledgeroot does exactly three things:
-
-| Does | Doesn't |
+| Status | Meaning |
 |---|---|
-| **Authorization** — a user-signed mandate caps what the agent may spend, to whom, and until when | ❌ **No custody** — the private key never leaves the machine |
-| **Pre-execution checks** — a fail-closed policy engine with five default policies | ❌ **No router or discovery layer** — that layer is already taken |
-| **Audit trail** — six-segment receipts + hash chain + on-chain anchoring + offline tri-state verification | ❌ **No LLM inference gate** — determinism is precisely our advantage |
+| `verified` | every check passed |
+| `tampered` | **bytes were checked and do not match** — self-hash mismatch / broken `prevHash` link / a first receipt carrying `prevHash` / `plan.quoteHash` not committing to the recorded quote / recomputed epoch root ≠ anchored root / receipts missing from an anchored epoch / signature mismatch / unsupported `alg` |
+| `incomplete` | **evidence is missing or unobtainable** — unsigned / no public key for that `kid` / a paid receipt with no `txHash` / an anchor with no boundary / unknown settlement protocol / unreachable node |
 
-> 📌 At this granularity a **receipt is not the product** (a ten-thousandth of $0.005) — it is **raw material**. Only the layer that turns receipts into a **ledger** can be charged for. That positioning does **not** lower the bar on the receipt engineering: the layer above can only be trusted if every receipt beneath it verifies independently.
+**This boundary is the single most important discipline in the product**: `tampered` outranks `incomplete`, and **unobtainable evidence is never reported as tampering**. Reporting a network failure as tampering would destroy the credibility of the whole alarm; conversely, treating missing evidence as a pass would claim a check that never ran.
 
-### Aligned with MAS SAFR
+**On-chain settlement checking is opt-in** (`--check-chain` / `checkChain: true`): the offline path stays synchronous and network-free; only the chain check reaches for RPC.
 
-Ledgeroot's three layers map one-to-one onto the three runtime safeguards in MAS's *Safeguards for Agentic Finance at Runtime* — **we implemented the same architecture independently, before seeing that document**:
+| On-chain check verdicts |
+|---|
+| transaction not found → `tampered` (there is no such payment on chain) |
+| **node unreachable → `incomplete`** (cannot read ≠ does not exist) |
+| transaction reverted / `to` is not the USDC contract / the call is not a `transferWithAuthorization` / `to`·`value`·`from` disagree with the receipt's payTo·amount·payer → `tampered` |
+| a non-x402 settlement protocol → `incomplete` (see [Known limits](#known-limits)) |
 
-| SAFR safeguard | Ledgeroot |
+#### Anchor boundaries
+
+An epoch root covers "the receipts that existed at submission time" (`receiptCount`). Verification slices back to that boundary before recomputing, so **payments made after an anchor do not read as tampering**; conversely, fewer receipts present than the recorded count → `tampered` (that is a deletion).
+
+**Anchors record their contract.** Every local anchor names the contract its root was submitted to, so repointing `LEDGEROOT_ANCHOR_ADDRESS` is detected instead of silently skipped: a record from the old contract cannot make the new one look already-anchored, and the next `anchor` re-submits on its own. Records written before the column existed carry no contract — their target is unknown, which is the case `--force` is for.
+
+### The five default policies (fail-closed)
+
+Each attack shape has the policy that catches it:
+
+1. **Counterparty whitelist** — only pay x402 gateways listed in the mandate
+2. **payTo binding** — the settlement address must match the mandate (**this is the one that stops the prompt-injected transfer in the demo above**)
+3. **Quote drift** — the amount charged may not drift from the 402 quote beyond a threshold (10% by default)
+4. **Endpoint rate limit** — cap call frequency per endpoint
+5. **Amount limits** — a per-payment ceiling plus a cumulative ceiling
+
+**What the constraints mean**: an empty whitelist or an empty `payTo` list means **unconstrained**, not deny-everything; rate limiting only applies when the mandate sets `endpointRateLimit`; the two amount limits always apply. `ledgeroot_mandate_import` **intersects** the mandate's constraints with the policies registered locally and records that intersection in segment 2.
+
+The engine runs **every** policy and records every verdict, returning the first denial. Amounts always go through `decimal.ts` — **bigint arithmetic over six-decimal units**; money never touches a float.
+
+**Of these, the ones a chain cannot express are quote drift, endpoint rate limits, cumulative ceilings (structuring) and the denial record.** A chain knows addresses, not hosts or quotes, and does not record "attempts that were blocked". That is the reason this layer exists.
+
+### Idempotency, the crash window, and task grouping
+
+The x402 rail and the local database **are not one transaction**. Ledgeroot closes the gap with two optional correlation keys:
+
+#### `requestId` — idempotency, claimed **before the money moves**
+
+The naive version ("write the receipt after settling, dedupe by looking up receipts on retry") has a fatal window: if the process dies **after settlement but before the receipt is on disk**, the money moved, nothing was recorded, and `requestId` finds nothing — so the retry **pays a second time**. That loses both the evidence and the money, which is exactly what the product claims to prevent.
+
+So `requestId` is consumed **at attempt time**, not at success time:
+
+| Step | Action |
 |---|---|
-| establish agent's identity and authority | mandate (EIP-712 signed authorization) + `ledgeroot_mandate_sign` |
-| evaluate agent actions against controls before execution | policy engine (fail-closed, five default policies) + the pre-check inside `ledgeroot_pay` |
-| maintain a clear audit record | six-segment receipts + RFC 8785 hash chain + epoch Merkle root on-chain + offline tri-state `ledgeroot_verify` |
+| 1 | an existing receipt matches → **replay it** (`deduplicated: true`), no second charge |
+| 2 | after policies allow, **before the money moves**: claim the id in the out-of-chain `payment_intents` table |
+| 3 | **claim fails** (the key is taken, meaning an earlier attempt's outcome was never recorded) → **deny**, and write a `denied` receipt |
+| 4 | settle → write the receipt → release the claim |
 
-> SAFR is a voluntary framework (published 2026-07-03); what will actually bind is MAS's forthcoming AI risk-management guidance covering agentic AI. Both are worth aligning with — so we implement SAFR's three layers now.
+**Why a failed claim must deny rather than retry**: that row means "**we do not know whether that payment settled**". Refusing to spend is recoverable; paying twice is not.
 
-### Works with
+> ⚠️ The pre-write record **can only live outside the chain**: a receipt's `id` is its content hash, so flipping `status` from `pending` to `paid` changes the hash, and the next receipt's `prevHash` would point at a hash that no longer exists. The log is append-only — in-place updates are structurally impossible.
+>
+> ⚠️ **Pass no `requestId` and you get none of this protection** — there is nothing to key the attempt on. Idempotency has to be asked for.
 
-- **Any MCP host** — Claude Code, opencode, and anything else that speaks MCP (this is the only integration surface we maintain).
-- **x402 gateways** — including those discoverable through Coinbase's Bazaar.
-- **Monad today** — testnet (chainId 10143) by default, with mainnet (143) wired for buying, settlement checks and anchoring; the x402 facilitator is `x402-facilitator.molandak.org`. Other chains are a config instance away, not a rewrite; see [Known limits](#known-limits).
-- **AP2-style mandates** — import an externally signed authorization and intersect it with local policy.
+#### `taskId` — the intent chain
+
+Groups several payments under one user task; the dashboard aggregates them as "N payments / total / N blocked".
+
+#### Revocation
+
+`ledgeroot_mandate_revoke` revokes a single mandate; the store also exposes a **one-click kill switch** (`revokeAllMandates`) for control planes to call. The next payment after revocation is denied **and recorded**.
 
 ---
 
@@ -348,6 +426,16 @@ Three properties hold across every path:
 - **The keys are separate and never fall back.** `LEDGEROOT_PRIVATE_KEY` moves money, `LEDGEROOT_SIGNING_KEY` only makes statements, `LEDGEROOT_ANCHOR_KEY` only submits roots. Evidence that cannot be attributed reads `incomplete`, not `verified`.
 - **Verification never calls home.** Receipts carry their own `kid` and the public keys travel in the bundle; the only network read is the opt-in chain check.
 
+**The three keys, and what happens when one is missing:**
+
+| Variable | Job | If unset |
+|---|---|---|
+| `LEDGEROOT_PRIVATE_KEY` | **Moves money**: signs EIP-3009 authorizations (and submits anchors unless `LEDGEROOT_ANCHOR_KEY` is set) | cannot pay |
+| `LEDGEROOT_SIGNING_KEY` | **Only makes statements**: signs receipts | **receipts are unsigned → `verify` reports `incomplete`, not `verified`** |
+| `LEDGEROOT_ANCHOR_KEY` | **Only submits roots**: signs anchor transactions | falls back to `LEDGEROOT_PRIVATE_KEY` |
+
+They deliberately **do not fall back to each other** (except `LEDGEROOT_ANCHOR_KEY` → `LEDGEROOT_PRIVATE_KEY`): one key moves money, another attests to what happened, a third submits roots, and none can do the others' job. Evidence that cannot be attributed should not read as `verified`.
+
 ### Extension seams
 
 - **Chains are instances, not branches.** `chains.ts` holds testnet (10143) and mainnet (143), and `FacilitatorNetworkConfig` already abstracts `chainId` / `network` / `scheme` / `usdcAddress`. `ledgeroot_buy` picks a rail by `chainId`; `ledgeroot_pay` is still pinned to testnet — see [Known limits](#known-limits).
@@ -359,151 +447,50 @@ No custody (the key never leaves the machine), no router or discovery layer, no 
 
 ---
 
-## The six-segment receipt
+## Where it sits
 
-`intent → mandate → plan → call → transaction → delivery`
+**Niche: on-chain stablecoins × agent micro-402 payments** (unit price $0.001–$0.05, on the order of a million payments a month).
 
-| Segment | What goes in | Where it lands |
-|---|---|---|
-| 1. **Intent** | a natural-language statement of why the agent is paying | `segments.intent.text` |
-| 2. **Mandate** | the authorization covering this payment + the **policy intersection** (which policies the mandate actually constrained) | `segments.mandate` |
-| 3. **Plan** | the 402 quote **exactly as the seller sent it**, plus its canonical hash — `payTo` and the quoted amount are read from here, so what policy judged is what the receipt records | `segments.plan` |
-| 4. **Call** | **the verdict of every policy**, both the passing and the denying ones | `segments.call.policyResults` |
-| 5. **Transaction** | settlement protocol + `txHash` + `chainId` + `payer` | `segments.tx` |
-| 6. **Delivery** | **the hash and byte size** of the response body — never the body itself | `segments.delivery` |
+The niche is guaranteed by **fee structure**, not by technical superiority: a $0.30 + 2.9% card fee spread across a $0.005 payment is 6000% — **physically impossible**. That is why x402 exists, and why we **don't do large-value payments**. Large payments come with invoices, contracts and refund flows, and that ground belongs to Shopify, Stripe, Visa TAP and Mastercard.
 
-A few things are deliberate:
+> ⚠️ Fee structure excludes anyone taking a **percentage**. It does not exclude a cloud vendor that bills by load and treats payment as a platform feature.
 
-- **Segments are interlocked by RFC 8785 canonical hashing.** Each receipt carries a `prevHash` pointing back at the previous receipt's `receiptHash`. The log is append-only and cannot be updated in place — a receipt's `id` *is* the canonical hash of its content, so changing one byte makes it a different receipt.
-- **Every receipt carries a detached Ed25519 signature** with a JWS-style `protected` header. The signature covers `{payload, protected}`, so `alg` and `kid` sit **inside the signed bytes** and cannot be swapped after the fact. `kid` is the public key's **RFC 7638 JWK thumbprint** — the identifier is derived from the key itself, so it needs no registry and cannot drift away from the key.
-- **The hash chain proves the content was not changed; the signature proves who made the statement.** They are independent: tamper with the content and re-hash it, and the chain still verifies — only the signature catches it.
-- Public keys are published as **JWKS** (`npx ledgeroot jwks`) and shipped inside the evidence bundle, so a third party can verify signatures **without calling home**.
-- **Segment 6 can only be reported by the caller** (`responseBody` on `ledgeroot_pay`). Ledgeroot settles the payment but **never fetches the resource** — only the agent sees the response body, so only the caller can supply its hash.
-- **Segment 3 is checkable, not just descriptive.** The quote is stored whole and committed to by hash, so a verifier recomputes `canonicalHash(segments.plan.quote)` and compares. A quote swapped after signing fails that check even if the receipt is re-hashed and re-signed — which is exactly the edit an issuer could otherwise make quietly. `payTo` and the quoted amount come from the same object, so a caller cannot pass a benign `payTo` alongside a quote pointing somewhere else.
+> 📌 **Two axes, not one.** Amount is the first — card fees make a $0.005 payment impossible, so we don't do large-value. Acceptance is the second, and it is the sharper one: **consumer-facing agent payments already run on Shop Pay / Stripe Link with one-time tokenized credentials — stablecoins never enter that flow, and what blocks them there is merchant acceptance, not fees.** Stablecoins' ground is the end the card networks *won't* go: **machine-to-machine, the cross-border long tail, API-level micropayments.** Two scenarios, two stories — don't mix them, and don't reach for the fee argument to explain the consumer one.
 
-### The signing key is separate from the payment key
+Within that niche Ledgeroot does exactly three things:
 
-| Variable | Job | If unset |
-|---|---|---|
-| `LEDGEROOT_PRIVATE_KEY` | **Moves money**: signs EIP-3009 authorizations (and submits anchors unless `LEDGEROOT_ANCHOR_KEY` is set) | cannot pay |
-| `LEDGEROOT_SIGNING_KEY` | **Only makes statements**: signs receipts | **receipts are unsigned → `verify` reports `incomplete`, not `verified`** |
-
-They deliberately **do not fall back to each other**: one key moves money, the other attests to what happened, and neither can do the other's job. Evidence that cannot be attributed should not read as `verified`.
-
----
-
-## Tri-state verification (offline first)
-
-Verification **depends on no server** — `ledgeroot verify` reads the local database and recomputes.
-
-| Status | Meaning |
+| Does | Doesn't |
 |---|---|
-| `verified` | every check passed |
-| `tampered` | **bytes were checked and do not match** — self-hash mismatch / broken `prevHash` link / a first receipt carrying `prevHash` / `plan.quoteHash` not committing to the recorded quote / recomputed epoch root ≠ anchored root / receipts missing from an anchored epoch / signature mismatch / unsupported `alg` |
-| `incomplete` | **evidence is missing or unobtainable** — unsigned / no public key for that `kid` / a paid receipt with no `txHash` / an anchor with no boundary / unknown settlement protocol / unreachable node |
+| **Authorization** — a user-signed mandate caps what the agent may spend, to whom, and until when | ❌ **No custody** — the private key never leaves the machine |
+| **Pre-execution checks** — a fail-closed policy engine with five default policies | ❌ **No router or discovery layer** — that layer is already taken |
+| **Audit trail** — six-segment receipts + hash chain + on-chain anchoring + offline tri-state verification | ❌ **No LLM inference gate** — determinism is precisely our advantage |
 
-**This boundary is the single most important discipline in the product**: `tampered` outranks `incomplete`, and **unobtainable evidence is never reported as tampering**. Reporting a network failure as tampering would destroy the credibility of the whole alarm; conversely, treating missing evidence as a pass would claim a check that never ran.
+> 📌 At this granularity a **receipt is not the product** (a ten-thousandth of $0.005) — it is **raw material**. Only the layer that turns receipts into a **ledger** can be charged for. That positioning does **not** lower the bar on the receipt engineering: the layer above can only be trusted if every receipt beneath it verifies independently.
 
-**On-chain settlement checking is opt-in** (`--check-chain` / `checkChain: true`): the offline path stays synchronous and network-free; only the chain check reaches for RPC.
+### Aligned with MAS SAFR
 
-| On-chain check verdicts |
-|---|
-| transaction not found → `tampered` (there is no such payment on chain) |
-| **node unreachable → `incomplete`** (cannot read ≠ does not exist) |
-| transaction reverted / `to` is not the USDC contract / the call is not a `transferWithAuthorization` / `to`·`value`·`from` disagree with the receipt's payTo·amount·payer → `tampered` |
-| a non-x402 settlement protocol → `incomplete` (see [Known limits](#known-limits)) |
+Ledgeroot's three layers map one-to-one onto the three runtime safeguards in MAS's *Safeguards for Agentic Finance at Runtime* — **we implemented the same architecture independently, before seeing that document**:
 
-**Anchor boundaries**: an epoch root covers "the receipts that existed at submission time" (`receiptCount`). Verification slices back to that boundary before recomputing, so **payments made after an anchor do not read as tampering**; conversely, fewer receipts present than the recorded count → `tampered` (that is a deletion).
-
-**Anchors record their contract.** Every local anchor names the contract its root was submitted to, so repointing `LEDGEROOT_ANCHOR_ADDRESS` is detected instead of silently skipped: a record from the old contract cannot make the new one look already-anchored, and the next `anchor` re-submits on its own. Records written before the column existed carry no contract — their target is unknown, which is the case `--force` is for.
-
----
-
-## The five default policies (fail-closed)
-
-Each attack shape has the policy that catches it:
-
-1. **Counterparty whitelist** — only pay x402 gateways listed in the mandate
-2. **payTo binding** — the settlement address must match the mandate (**this is the one that stops the prompt-injected transfer in the demo above**)
-3. **Quote drift** — the amount charged may not drift from the 402 quote beyond a threshold (10% by default)
-4. **Endpoint rate limit** — cap call frequency per endpoint
-5. **Amount limits** — a per-payment ceiling plus a cumulative ceiling
-
-**What the constraints mean**: an empty whitelist or an empty `payTo` list means **unconstrained**, not deny-everything; rate limiting only applies when the mandate sets `endpointRateLimit`; the two amount limits always apply. `ledgeroot_mandate_import` **intersects** the mandate's constraints with the policies registered locally and records that intersection in segment 2.
-
-The engine runs **every** policy and records every verdict, returning the first denial. Amounts always go through `decimal.ts` — **bigint arithmetic over six-decimal units**; money never touches a float.
-
-**Of these, the ones a chain cannot express are quote drift, endpoint rate limits, cumulative ceilings (structuring) and the denial record.** A chain knows addresses, not hosts or quotes, and does not record "attempts that were blocked". That is the reason this layer exists.
-
----
-
-## Idempotency, the crash window, and task grouping
-
-The x402 rail and the local database **are not one transaction**. Ledgeroot closes the gap with two optional correlation keys:
-
-### `requestId` — idempotency, claimed **before the money moves**
-
-The naive version ("write the receipt after settling, dedupe by looking up receipts on retry") has a fatal window: if the process dies **after settlement but before the receipt is on disk**, the money moved, nothing was recorded, and `requestId` finds nothing — so the retry **pays a second time**. That loses both the evidence and the money, which is exactly what the product claims to prevent.
-
-So `requestId` is consumed **at attempt time**, not at success time:
-
-| Step | Action |
+| SAFR safeguard | Ledgeroot |
 |---|---|
-| 1 | an existing receipt matches → **replay it** (`deduplicated: true`), no second charge |
-| 2 | after policies allow, **before the money moves**: claim the id in the out-of-chain `payment_intents` table |
-| 3 | **claim fails** (the key is taken, meaning an earlier attempt's outcome was never recorded) → **deny**, and write a `denied` receipt |
-| 4 | settle → write the receipt → release the claim |
+| establish agent's identity and authority | mandate (EIP-712 signed authorization) + `ledgeroot_mandate_sign` |
+| evaluate agent actions against controls before execution | policy engine (fail-closed, five default policies) + the pre-check inside `ledgeroot_pay` |
+| maintain a clear audit record | six-segment receipts + RFC 8785 hash chain + epoch Merkle root on-chain + offline tri-state `ledgeroot_verify` |
 
-**Why a failed claim must deny rather than retry**: that row means "**we do not know whether that payment settled**". Refusing to spend is recoverable; paying twice is not.
+> SAFR is a voluntary framework (published 2026-07-03); what will actually bind is MAS's forthcoming AI risk-management guidance covering agentic AI. Both are worth aligning with — so we implement SAFR's three layers now.
 
-> ⚠️ The pre-write record **can only live outside the chain**: a receipt's `id` is its content hash, so flipping `status` from `pending` to `paid` changes the hash, and the next receipt's `prevHash` would point at a hash that no longer exists. The log is append-only — in-place updates are structurally impossible.
->
-> ⚠️ **Pass no `requestId` and you get none of this protection** — there is nothing to key the attempt on. Idempotency has to be asked for.
+### Works with
 
-### `taskId` — the intent chain
-
-Groups several payments under one user task; the dashboard aggregates them as "N payments / total / N blocked".
-
-### Revocation
-
-`ledgeroot_mandate_revoke` revokes a single mandate; the store also exposes a **one-click kill switch** (`revokeAllMandates`) for control planes to call. The next payment after revocation is denied **and recorded**.
+- **Any MCP host** — Claude Code, opencode, and anything else that speaks MCP (this is the only integration surface we maintain).
+- **x402 gateways** — including those discoverable through Coinbase's Bazaar.
+- **Monad today** — testnet (chainId 10143) by default, with mainnet (143) wired for buying, settlement checks and anchoring; the x402 facilitator is `x402-facilitator.molandak.org`. Other chains are a config instance away, not a rewrite; see [Known limits](#known-limits).
+- **AP2-style mandates** — import an externally signed authorization and intersect it with local policy.
 
 ---
 
-## Known limits
+## Reference
 
-The honest section. These are limits of the **current implementation**, not a repudiation of the design intent; the ordering and trade-offs are recorded in [roadmap.md](./docs/roadmap.md).
-
-| Limit | Current state |
-|---|---|
-| **The pay path is still testnet-only** | `X402_NETWORKS` holds two instances (Monad testnet 10143, mainnet 143) and `ledgeroot_buy` chooses between them by `chainId`. **`ledgeroot_pay` does not**: `bootstrap.ts` still hands the facilitator `MONAD_TESTNET_X402` unconditionally, with no environment variable able to move it |
-| **Block time is not a qualified time source** | Anchoring now runs on Monad mainnet (`0x958f887f203a08f43fe45ba00a6a4199b9e01b61`), an improvement on the earlier testnet contract — but a block timestamp is still not an external authority. An RFC 3161 qualified timestamp remains the follow-up |
-| **MPP is a seam, not an implementation** | `segments.tx.protocol` is an explicit dimension: **an unknown protocol reports `incomplete`** — neither waved through nor wrongly accused. But MPP's field-level shape is undecided, so no payload shape is assumed and no provider exists. Tracked as the top item in the [roadmap](./docs/roadmap.md) |
-| **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
-| **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
-| **Testnet anchoring has no evidentiary value** | A testnet deployment still exists (`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`) and produces no evidence; the live anchor contract is the mainnet one above |
-| **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
-| **No standalone verifier package** | The evidence bundle already carries one: [MandateKey](https://github.com/ledgeroot/mandatekey)'s zip ships `verify.mjs`, which has its own RFC 8785 canonicaliser and RFC 6962 proof walk and imports only `node:crypto`, so the recipient installs nothing. What has not shipped is a package for verifying a receipt *outside* a bundle |
-| **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
-| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 136 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
-| **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
-| **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
-
----
-
-## The anchor contract
-
-`contracts/src/LedgerootAnchor.sol` — the only contract in the project, storing **a 32-byte root, a back-pointer, an epoch counter and the owner**, and nothing else.
-
-- **Owner-gated**: `anchor()` is `onlyOwner`. An open `anchor()` reduces "this root is on chain" to "somebody anchored something here" — an attacker could publish a forged root, or displace the honest one so valid receipts verify as `tampered`. The owner is the **anchoring wallet** (derived from `LEDGEROOT_ANCHOR_KEY`, or `LEDGEROOT_PRIVATE_KEY` when unset), not the deployer, so the two keys can be separated.
-- **Ownership is transferable**: `transferOwnership` lets the anchoring key be rotated without redeploying. While the owner was fixed at construction, replacing the anchoring wallet meant deploying again and orphaning every root on the old contract. It is one step rather than an accept-then-transfer handshake because a mistaken transfer is recoverable by the current owner, whereas a two-step one leaves the contract unable to anchor in between.
-- **The contract owns the epoch**: `lastEpoch` increments on every anchor, and clients read it from the contract instead of counting locally — otherwise a fresh database would label its first anchor "epoch 1" no matter how far the contract has already run.
-- **RFC 6962 MTH for Merkle**: leaves are `SHA-256(0x00 ‖ d)`, internal nodes `SHA-256(0x01 ‖ L ‖ R)`, split at the largest power of two below n (no duplicating an odd trailing node). **Domain separation** is what buys second-preimage resistance. Tests cross-check against the stack-based algorithm in RFC 9162 §2.1.2 as an independent oracle.
-- Deployed to Monad mainnet (chainId 143): `0x958f887f203a08f43fe45ba00a6a4199b9e01b61`, owned by the anchoring wallet. It replaced `0xca08c795357ae8bcee8af592c827d419750fdf84`, whose owner was the payment key; the roots anchored there stay on that contract. An earlier testnet deployment (`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`) produces no evidence. **Addresses change — trust your own `.env`**.
-
----
-
-## The eleven `ledgeroot_*` tools
+### The eleven `ledgeroot_*` tools
 
 | Tool | What it does |
 |---|---|
@@ -519,16 +506,14 @@ The honest section. These are limits of the **current implementation**, not a re
 | `ledgeroot_anchor` | Submit the epoch Merkle root on-chain |
 | `ledgeroot_export` | Export the evidence bundle (receipts + root + anchor record + public keys + verification verdict) |
 
----
-
-## Environment variables
+### Environment variables
 
 | Variable | Meaning |
 |---|---|
 | `LEDGEROOT_DB` | SQLite database path (defaults to `ledgeroot.sqlite`) |
 | `LEDGEROOT_PRIVATE_KEY` | The key that **moves money**: payment signing. Never leaves the machine |
 | `LEDGEROOT_ANCHOR_KEY` | The key that **submits anchors**. Falls back to `LEDGEROOT_PRIVATE_KEY`. Set it to keep the unattended anchor loop off the key that moves money — it is also the contract's `owner`, and the contract can pass ownership on with `transferOwnership`, so rotating it needs no redeploy |
-| `LEDGEROOT_SIGNING_KEY` | The **receipt signing** key (32-byte hex seed), deliberately separate from the payment key. **If unset, receipts are unsigned and verification reports `incomplete`** |
+| `LEDGEROOT_SIGNING_KEY` | The **receipt signing** key (32-byte hex seed), deliberately separate from the payment key. If unset, receipts are unsigned — see [Trust boundaries](#trust-boundaries) |
 | `LEDGEROOT_FACILITATOR_URL` | Monad x402 facilitator endpoint (defaults to `https://x402-facilitator.molandak.org` — public, no API key) |
 | `LEDGEROOT_RPC_URL` | Monad testnet RPC (defaults to `https://testnet-rpc.monad.xyz`) |
 | `LEDGEROOT_MAINNET_RPC_URL` | Monad mainnet RPC, used when a receipt settled on chain 143 (defaults to `https://rpc.monad.xyz`) |
@@ -538,9 +523,17 @@ The honest section. These are limits of the **current implementation**, not a re
 | `LEDGEROOT_ANCHOR_BYTECODE` | Bytecode for deployment; falls back to the `forge build` artifact |
 | `LEDGEROOT_DRY_RUN` | `true` enables simulation: the full loop with no wallet and no USDC (fake transactions, throwaway key — **never for real payments**) |
 
----
+### The anchor contract
 
-## Repository layout
+`contracts/src/LedgerootAnchor.sol` — the only contract in the project, storing **a 32-byte root, a back-pointer, an epoch counter and the owner**, and nothing else.
+
+- **Owner-gated**: `anchor()` is `onlyOwner`. An open `anchor()` reduces "this root is on chain" to "somebody anchored something here" — an attacker could publish a forged root, or displace the honest one so valid receipts verify as `tampered`. The owner is the **anchoring wallet** (derived from `LEDGEROOT_ANCHOR_KEY`, or `LEDGEROOT_PRIVATE_KEY` when unset), not the deployer, so the two keys can be separated.
+- **Ownership is transferable**: `transferOwnership` lets the anchoring key be rotated without redeploying. While the owner was fixed at construction, replacing the anchoring wallet meant deploying again and orphaning every root on the old contract. It is one step rather than an accept-then-transfer handshake because a mistaken transfer is recoverable by the current owner, whereas a two-step one leaves the contract unable to anchor in between.
+- **The contract owns the epoch**: `lastEpoch` increments on every anchor, and clients read it from the contract instead of counting locally — otherwise a fresh database would label its first anchor "epoch 1" no matter how far the contract has already run.
+- **RFC 6962 MTH for Merkle**: leaves are `SHA-256(0x00 ‖ d)`, internal nodes `SHA-256(0x01 ‖ L ‖ R)`, split at the largest power of two below n (no duplicating an odd trailing node). **Domain separation** is what buys second-preimage resistance. Tests cross-check against the stack-based algorithm in RFC 9162 §2.1.2 as an independent oracle.
+- Deployed to Monad mainnet (chainId 143): `0x958f887f203a08f43fe45ba00a6a4199b9e01b61`, owned by the anchoring wallet. It replaced `0xca08c795357ae8bcee8af592c827d419750fdf84`, whose owner was the payment key; the roots anchored there stay on that contract. An earlier testnet deployment (`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`) produces no evidence. **Addresses change — trust your own `.env`**.
+
+### Repository layout
 
 ```
 src/
@@ -563,6 +556,27 @@ docs/            architecture review / roadmap / competitor and standards resear
 assets/          logo lockups (light + dark)
 test/            136 tests across 15 files
 ```
+
+---
+
+## Known limits
+
+The honest section. These are limits of the **current implementation**, not a repudiation of the design intent; the ordering and trade-offs are recorded in [roadmap.md](./docs/roadmap.md).
+
+| Limit | Current state |
+|---|---|
+| **The pay path is still testnet-only** | `X402_NETWORKS` holds two instances (Monad testnet 10143, mainnet 143) and `ledgeroot_buy` chooses between them by `chainId`. **`ledgeroot_pay` does not**: `bootstrap.ts` still hands the facilitator `MONAD_TESTNET_X402` unconditionally, with no environment variable able to move it |
+| **Block time is not a qualified time source** | Anchoring now runs on Monad mainnet (`0x958f887f203a08f43fe45ba00a6a4199b9e01b61`), an improvement on the earlier testnet contract — but a block timestamp is still not an external authority. An RFC 3161 qualified timestamp remains the follow-up |
+| **MPP is a seam, not an implementation** | `segments.tx.protocol` is an explicit dimension: **an unknown protocol reports `incomplete`** — neither waved through nor wrongly accused. But MPP's field-level shape is undecided, so no payload shape is assumed and no provider exists. Tracked as the top item in the [roadmap](./docs/roadmap.md) |
+| **No indexes on the hot path** | There is not a single `CREATE INDEX` in the codebase: each payment does 4 unindexed full-table scans, two of which also `JSON.parse` the entire match set. O(n) per payment, O(n²) per month |
+| **Single process, single tenant** | One database, one signing key, one payment key. There is no tenant boundary in the data model — `agentId` / `mandateId` are not isolation keys |
+| **Testnet anchoring has no evidentiary value** | A testnet deployment still exists (`0xc0234ea7e3af77e5ae686caff62ff88eaccd8c30`) and produces no evidence; the live anchor contract is the mainnet one above |
+| **Inclusion proofs are library-only** | `merkleProof` / `verifyMerkleProof` (RFC 6962 §2.1.3 audit paths) are implemented and cross-checked by tests, but **this repo's CLI and `ledgeroot_verify` do not yet emit or verify per-receipt proofs**; the wiring lives in the [MandateKey](https://github.com/ledgeroot/mandatekey) evidence bundle |
+| **No standalone verifier package** | The evidence bundle already carries one: [MandateKey](https://github.com/ledgeroot/mandatekey)'s zip ships `verify.mjs`, which has its own RFC 8785 canonicaliser and RFC 6962 proof walk and imports only `node:crypto`, so the recipient installs nothing. What has not shipped is a package for verifying a receipt *outside* a bundle |
+| **Verification is full-scan** | `verify` walks every receipt recomputing SHA-256 + Ed25519 on each run — no incremental mode, no checkpoint. `--check-chain` puts no cap on RPC concurrency |
+| **Contract tests are not in CI** | `.github/workflows/ci.yml` runs typecheck, the 136 TypeScript tests and the build. `forge test` for `LedgerootAnchor.sol` still runs locally only |
+| **No aggregation layer** | There is not one SQL aggregate in the codebase (no `GROUP BY` / `SUM` / `COUNT`) and no reconciliation export. This is the only chargeable layer in the niche, and it does **not exist at all** |
+| **ERC-8004 is a field, not an integration** | `Mandate.agentId` exists but is not validated against a registry |
 
 ---
 

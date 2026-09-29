@@ -31,7 +31,7 @@ function text(payload: unknown) {
 }
 
 /**
- * Tool Router — the ten `ledgeroot_*` tools exposed over MCP.
+ * Tool Router — the eleven `ledgeroot_*` tools exposed over MCP.
  */
 export function createToolRouter(server: McpServer, services: LedgerootServices): void {
   server.registerTool(
