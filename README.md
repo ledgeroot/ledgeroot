@@ -235,6 +235,130 @@ Ledgeroot's three layers map one-to-one onto the three runtime safeguards in MAS
 
 ---
 
+## Architecture
+
+It is one Node process, not a service you deploy. The CLI, the MCP server and the library all assemble the same **service graph** over a single local SQLite file, and the MCP server is a stdio child of whatever host launches it. No backend, no account, no telemetry — which is why the whole loop runs with the network unplugged.
+
+### The shape of it
+
+```text
+        MCP host — Claude Code, opencode, …
+           │  stdio · eleven ledgeroot_* tools
+           ▼
+ ┌──────────────────────────────────────────────────────┐
+ │ tools/    pay · buy · mandate_* · receipt_* ·        │
+ │           verify · anchor · export                   │
+ ├──────────────────────────────────────────────────────┤
+ │ THE GATE — pure, local, fail-closed                  │
+ │   mandate.ts          EIP-712 authorization          │
+ │   policy/engine.ts    every policy runs, every       │
+ │                       verdict kept                   │
+ │   policy/defaults.ts  the five policies              │
+ ├─────────────────────────┬────────────────────────────┤
+ │ THE RAIL — network      │ THE RECORD — local         │
+ │   x402/buyer.ts         │   receipt/builder.ts       │
+ │     @x402/fetch + our   │   receipt/hashchain.ts     │
+ │     gate at the signing │     RFC 8785 + SHA-256     │
+ │     boundary            │   receipt/signing.ts       │
+ │   x402/facilitator.ts   │     Ed25519 + JWKS kid     │
+ │     /verify → /settle   │   store/db.ts              │
+ │     EIP-3009, 2 serial  │     SQLite, append-only,   │
+ │     round trips         │     WAL                    │
+ ├─────────────────────────┴────────────────────────────┤
+ │ anchor/  RFC 6962 Merkle root → LedgerootAnchor.sol  │
+ │ verify/  offline tri-state verifier + chain checks   │
+ └──────────────────────────────────────────────────────┘
+```
+
+**The gate sits on the local side on purpose.** Judging a payment needs no network, no RPC and no model — it is pure functions over the mandate and the seller's quote, so it is deterministic and cheap. The network appears in exactly one place per payment (the facilitator), and once more per anchor.
+
+### The write path — one payment
+
+`ledgeroot_pay` is the whole flow in one function (`tools/pay.ts`); `ledgeroot_buy` wraps the same gate around a 402 handshake it performs itself (`tools/buy.ts` → `x402/buyer.ts`).
+
+| # | Step | Where | Network? |
+|---|---|---|---|
+| 1 | read `payTo` and the amount out of the seller's **quote**, hash the quote (RFC 8785) | `pay.ts` | — |
+| 2 | `requestId` already has a receipt → **replay it**, no second charge | `store/db.ts` | — |
+| 3 | remember the previous receipt's hash as `prevHash` | `store/db.ts` | — |
+| 4 | resolve the mandate; unknown → **denied receipt** | `store/db.ts` | — |
+| 5 | compute the **policy intersection** (the mandate's constraints ∩ the policies registered here) | `mandate.ts` | — |
+| 6 | expired mandate → **denied receipt** | `pay.ts` | — |
+| 7 | run **every** policy and keep every verdict; first denial → **denied receipt** | `policy/engine.ts` | — |
+| 8 | **claim `requestId` before the money moves** — a claim that fails → denied | `store/db.ts` | — |
+| 9 | settle: `/verify` → `/settle` against the facilitator | `x402/facilitator.ts` | ⚠️ 2 serial round trips |
+| 10 | build the six segments, sign the `receiptHash` (Ed25519), append | `receipt/`, `store/db.ts` | — |
+| 11 | release the claim — the outcome is on disk, so a retry replays instead of re-paying | `store/db.ts` | — |
+
+Steps 1–8 and 10–11 are local and fast; **step 9 is the only protocol-inherent wait.** Both exits — `paid` and `denied` — write the same signed six-segment receipt, which is why a blocked attempt is on the record instead of merely absent. [Idempotency, the crash window, and task grouping](#idempotency-the-crash-window-and-task-grouping) explains why step 8 has to precede step 9.
+
+### The read path — verification
+
+`verify` recomputes everything from the local file and depends on **no server**: each receipt's `id` is its content hash, `prevHash` links the chain, `segments.plan.quoteHash` is recomputed against the stored quote, the Ed25519 signature is checked against the receipt's own `kid`, and the epoch root is recomputed and compared to the anchored one, sliced back to its `receiptCount`. It answers with one of three states — and the state machine, not the cryptography, is the hard part. See [Tri-state verification](#tri-state-verification-offline-first).
+
+`export` packages that same material — receipts, the anchor record, a Merkle inclusion proof per receipt, the JWKS, and the verdict — so a third party can re-run it elsewhere with nothing installed.
+
+### Module map
+
+| Layer | Responsibility | Key files |
+|---|---|---|
+| Authorization | EIP-712 signed mandate; sign / verify / import; intersect with local policy | `mandate.ts` |
+| Policy | Fail-closed engine, the five default policies, Zod schemas | `policy/` |
+| Rail | The seller handshake and settlement | `x402/buyer.ts`, `x402/facilitator.ts` |
+| Receipt | Six segments, RFC 8785 hash chain, Ed25519 signing, JWKS | `receipt/` |
+| Store | Append-only SQLite: receipts, mandates, anchors, payment intents | `store/db.ts` |
+| Anchoring | RFC 6962 Merkle root and inclusion proofs; submits to the contract | `anchor/` |
+| Verification | Offline tri-state verifier + on-chain settlement content checks | `verify/` |
+| Money | USDC six-decimal bigint arithmetic — never a float | `decimal.ts` |
+| Consistency | Post-hoc "did any paid receipt exceed its mandate" analysis | `consistency.ts` |
+| Chain config | Chain instances, RPC selection, the anchor chain | `chains.ts` |
+| Surface | The eleven MCP tools, the CLI, the public exports | `tools/`, `cli.ts`, `index.ts` |
+
+For the on-disk tree, see [Repository layout](#repository-layout).
+
+### Storage
+
+Four tables in one file (`store/db.ts`), with `journal_mode = WAL`:
+
+| Table | Key | Role |
+|---|---|---|
+| `receipts` | `seq` (rowid) · `id` UNIQUE | The append-only log. `id` **is** the content hash, so an in-place edit is structurally impossible |
+| `mandates` | `id` | Signed authorizations, plus the monotonic `revoked` flag |
+| `anchors` | `id` | Epoch, root, tx, the `receipt_count` boundary, and the **contract** the root went to |
+| `payment_intents` | `request_id` | The idempotency claim — deliberately **outside** the chain, because a pre-written `pending` receipt would change hash the moment it became `paid` and strand the next `prevHash` |
+
+### The service graph
+
+`bootstrap.ts` is the one place the collaborators are wired together:
+
+| Member | Implementation | When it changes |
+|---|---|---|
+| `store` | `LedgerootStore` over `LEDGEROOT_DB` | always |
+| `engine` | `PolicyEngine` + the five default policies | always |
+| `payments` | `FacilitatorClient` (EIP-3009) | **`DryRunPaymentProvider`** under `LEDGEROOT_DRY_RUN` — synthetic hashes, no wallet, no network |
+| `anchorer` | `Anchorer` (viem) | **absent** when there is no `LEDGEROOT_ANCHOR_ADDRESS` |
+
+Three entry points build it, and nothing else does: `dist/cli.js` (`verify` / `export` / `anchor` / `buy` / `jwks` / `serve`), `dist/server.js` (MCP over stdio), and the library via the subpath exports `ledgeroot`, `/store`, `/verify`, `/anchor`, `/receipt`, `/types`. **Only the CLI and the server load `.env`** — a library caller's environment belongs to the caller.
+
+### Trust boundaries
+
+Three properties hold across every path:
+
+- **Nothing skips a check.** Every policy runs on every attempt, and the first denial stops the payment *and* is recorded — there is no code path where a failing check lets the payment through.
+- **The keys are separate and never fall back.** `LEDGEROOT_PRIVATE_KEY` moves money, `LEDGEROOT_SIGNING_KEY` only makes statements, `LEDGEROOT_ANCHOR_KEY` only submits roots. Evidence that cannot be attributed reads `incomplete`, not `verified`.
+- **Verification never calls home.** Receipts carry their own `kid` and the public keys travel in the bundle; the only network read is the opt-in chain check.
+
+### Extension seams
+
+- **Chains are instances, not branches.** `chains.ts` holds testnet (10143) and mainnet (143), and `FacilitatorNetworkConfig` already abstracts `chainId` / `network` / `scheme` / `usdcAddress`. `ledgeroot_buy` picks a rail by `chainId`; `ledgeroot_pay` is still pinned to testnet — see [Known limits](#known-limits).
+- **Settlement protocol is an explicit dimension** of `segments.tx`: a non-x402 protocol verifies as `incomplete` rather than being waved through or wrongly accused. The seam is cut; no second protocol is implemented.
+
+### Deliberately not here
+
+No custody (the key never leaves the machine), no router or discovery layer, no LLM in the decision, and no tenant boundary — one database, one signing key, one payment key. The reasoning is in [Where it sits](#where-it-sits); the cost is stated plainly in [Known limits](#known-limits).
+
+---
+
 ## The six-segment receipt
 
 `intent → mandate → plan → call → transaction → delivery`

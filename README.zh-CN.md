@@ -232,6 +232,126 @@ Ledgeroot 的三层与 MAS《Safeguards for Agentic Finance at Runtime》的三�
 
 ---
 
+## 架构
+
+它是**一个 Node 进程**，不是你要部署的服务。CLI、MCP server 与库三者装配的是同一张**服务依赖图**，跑在同一个本地 SQLite 文件上；MCP server 只是宿主启动的一个 stdio 子进程。没有后端、没有账号、没有遥测——所以拔掉网线，整条闭环照样跑。
+
+### 整体形状
+
+```text
+        MCP 宿主 —— Claude Code、opencode、…
+           │  stdio · 十一个 ledgeroot_* 工具
+           ▼
+  tools/         pay · buy · mandate_* · receipt_*
+                 verify · anchor · export
+  ──────────────────────────────────────────────────
+  闸门 —— 纯函数、本地、fail-closed
+    mandate.ts          EIP-712 授权令
+    policy/engine.ts    每条策略都跑，每个判定都留
+    policy/defaults.ts  五条默认策略
+  ──────────────────────────────────────────────────
+  支付轨（走网络）              记录（留在本地）
+    x402/buyer.ts               receipt/builder.ts
+      @x402/fetch + 闸门        receipt/hashchain.ts
+      卡在签名那一刻              RFC 8785 + SHA-256
+    x402/facilitator.ts         receipt/signing.ts
+      /verify → /settle           Ed25519 + JWKS kid
+      EIP-3009，两次串行往返      store/db.ts
+                                  SQLite，append-only，WAL
+  ──────────────────────────────────────────────────
+  anchor/  RFC 6962 Merkle 根 → LedgerootAnchor.sol
+  verify/  离线三态验证器 + 链上结算校验
+```
+
+**闸门刻意留在本地一侧。** 判定一笔支付不需要网络、不需要 RPC、也不需要模型——它是作用在授权令与卖家报价上的纯函数，因此确定且便宜。整笔支付里网络只出现在一处（facilitator），锚定时再出现一次。
+
+### 写入路径 —— 一笔支付
+
+`ledgeroot_pay` 把一个完整流程收在一个函数里（`tools/pay.ts`）；`ledgeroot_buy` 则把同一道闸门套在它自己做的 402 握手上（`tools/buy.ts` → `x402/buyer.ts`）。
+
+| # | 步骤 | 位置 | 走网络？ |
+|---|---|---|---|
+| 1 | 从卖家**报价**里读出 `payTo` 与金额，对报价做哈希（RFC 8785） | `pay.ts` | — |
+| 2 | `requestId` 已有收据 → **直接重放**，不再扣一次钱 | `store/db.ts` | — |
+| 3 | 记住上一条收据的哈希作为 `prevHash` | `store/db.ts` | — |
+| 4 | 解析授权令；未知 → **denied 收据** | `store/db.ts` | — |
+| 5 | 计算**策略交集**（授权令的约束 ∩ 本地注册的策略） | `mandate.ts` | — |
+| 6 | 授权令过期 → **denied 收据** | `pay.ts` | — |
+| 7 | **每条**策略都跑、每个判定都留；第一次拒绝 → **denied 收据** | `policy/engine.ts` | — |
+| 8 | **在动钱之前用 `requestId` 占位**——占位失败 → 拒付 | `store/db.ts` | — |
+| 9 | 结算：对 facilitator 走 `/verify` → `/settle` | `x402/facilitator.ts` | ⚠️ 两次串行往返 |
+| 10 | 组装六段、对 `receiptHash` 签名（Ed25519）、追加落库 | `receipt/`、`store/db.ts` | — |
+| 11 | 释放占位——结果已落盘，重试会重放而不是重付 | `store/db.ts` | — |
+
+第 1–8 步与第 10–11 步都在本地、都快；**第 9 步是唯一协议固有的等待。** 两个出口——`paid` 与 `denied`——写下的都是同一张签名六段收据，所以被拦下的尝试是**留在账上**的，而不只是"没有发生"。第 8 步为什么必须排在第 9 步之前，见[幂等、崩溃窗口与任务关联](#幂等崩溃窗口与任务关联)。
+
+### 读取路径 —— 验证
+
+`verify` 从本地文件重算一切，**不依赖任何服务器**：每张收据的 `id` 就是它的内容哈希，`prevHash` 串起哈希链，`segments.plan.quoteHash` 对着存下的报价重算，Ed25519 签名对着收据自带的 `kid` 校验，epoch 根重算后与链上锚定的根按 `receiptCount` 切齐再比对。它给出三种状态之一——难的是**状态机**，不是密码学。见[三态验证（离线优先）](#三态验证离线优先)。
+
+`export` 把同一批材料打成一个包——收据、锚定记录、每张收据的 Merkle 包含证明、JWKS、以及验证结论——第三方什么都不用装就能在别处重跑。
+
+### 模块地图
+
+| 层 | 职责 | 关键文件 |
+|---|---|---|
+| 授权 | EIP-712 签名授权令；签发 / 验签 / 导入；与本地策略取交集 | `mandate.ts` |
+| 策略 | fail-closed 引擎、五条默认策略、Zod schema | `policy/` |
+| 支付轨 | 卖家握手与结算 | `x402/buyer.ts`、`x402/facilitator.ts` |
+| 收据 | 六段、RFC 8785 哈希链、Ed25519 签名、JWKS | `receipt/` |
+| 存储 | append-only SQLite：收据、授权令、锚定、支付占位 | `store/db.ts` |
+| 锚定 | RFC 6962 Merkle 根与包含证明；提交到合约 | `anchor/` |
+| 验证 | 离线三态验证器 + 链上结算内容校验 | `verify/` |
+| 金额 | USDC 六位小数 bigint 运算——永不碰浮点 | `decimal.ts` |
+| 一致性 | 事后分析"是否有已付收据超出其授权令" | `consistency.ts` |
+| 链配置 | 链实例、RPC 选择、锚定目标链 | `chains.ts` |
+| 接口面 | 十一个 MCP 工具、CLI、对外导出 | `tools/`、`cli.ts`、`index.ts` |
+
+磁盘上的目录树见[仓库结构](#仓库结构)。
+
+### 存储
+
+一个文件里四张表（`store/db.ts`），`journal_mode = WAL`：
+
+| 表 | 主键 | 作用 |
+|---|---|---|
+| `receipts` | `seq`（rowid）· `id` UNIQUE | append-only 日志。`id` **就是**内容哈希，所以原地修改在结构上不可能 |
+| `mandates` | `id` | 签名授权令，以及单调的 `revoked` 标记 |
+| `anchors` | `id` | epoch、根、tx、`receipt_count` 边界，以及根提交到的那个**合约** |
+| `payment_intents` | `request_id` | 幂等占位——刻意放在**链外**，因为预写一张 `pending` 收据，在它变成 `paid` 的瞬间哈希就变了，下一条的 `prevHash` 会指向不存在的哈希 |
+
+### 服务依赖图
+
+`bootstrap.ts` 是唯一装配协作者的地方：
+
+| 成员 | 实现 | 何时变化 |
+|---|---|---|
+| `store` | `LedgerootStore`，指向 `LEDGEROOT_DB` | 始终 |
+| `engine` | `PolicyEngine` + 五条默认策略 | 始终 |
+| `payments` | `FacilitatorClient`（EIP-3009） | `LEDGEROOT_DRY_RUN` 下换成 **`DryRunPaymentProvider`**——合成哈希、无钱包、无网络 |
+| `anchorer` | `Anchorer`（viem） | 没有 `LEDGEROOT_ANCHOR_ADDRESS` 时**缺席** |
+
+只有三个入口会装配它：`dist/cli.js`（`verify` / `export` / `anchor` / `buy` / `jwks` / `serve`）、`dist/server.js`（stdio 上的 MCP）、以及通过子路径导出 `ledgeroot`、`/store`、`/verify`、`/anchor`、`/receipt`、`/types` 使用的库。**只有 CLI 与 server 会加载 `.env`**——库调用方的环境由调用方自己定义。
+
+### 信任边界
+
+三条性质贯穿所有路径：
+
+- **没有一条路径跳过检查。** 每一次尝试都跑全部策略，第一次拒绝既拦住支付、**也**留下记录——不存在"检查失败却让支付通过"的代码路径。
+- **三把密钥彼此分离、互不回落。** `LEDGEROOT_PRIVATE_KEY` 动钱，`LEDGEROOT_SIGNING_KEY` 只做声明，`LEDGEROOT_ANCHOR_KEY` 只提交锚定。无法归因的证据读作 `incomplete`，不是 `verified`。
+- **验证永不回连。** 收据自带 `kid`，公钥随证据包一起走；唯一的网络读取是可选的链上校验。
+
+### 预留的接缝
+
+- **链是实例，不是分支。** `chains.ts` 里放着测试网（10143）与主网（143），`FacilitatorNetworkConfig` 已经把 `chainId` / `network` / `scheme` / `usdcAddress` 抽象出来。`ledgeroot_buy` 按 `chainId` 选轨；`ledgeroot_pay` 仍钉在测试网——见[已知边界](#已知边界)。
+- **结算协议是显式维度。** `segments.tx` 带 `protocol`：非 x402 的协议验证为 `incomplete`，既不放行、也不冤枉。接缝已切好；第二个协议尚未实现。
+
+### 刻意不做的
+
+不做托管（密钥不出本机）、不做路由器 / 发现层、不让 LLM 进决策、不做租户边界——一个库、一个签名密钥、一个付款密钥。理由见[它站在哪一格](#它站在哪一格)；代价在[已知边界](#已知边界)里直说。
+
+---
+
 ## 六段收据
 
 `意图 → 授权 → 计划 → 调用 → 交易哈希 → 交付凭证`
