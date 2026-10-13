@@ -1,9 +1,12 @@
 node_modules/
 dist/
 coverage/
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
+# SQLite databases and backups
+*.sqlite*
+
+# Local tooling config
+.commandcode/
+
 .env
 .env.*
 !.env.example
